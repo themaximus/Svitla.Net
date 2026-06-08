@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ua">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DTEK Monitor - Outage Schedule Widget</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrapper">
+    <header class="app-header">
+      <div class="logo">⚡ DTEK MONITOR</div>
+      <div class="header-actions">
+        <label class="switch lang-switcher">
+          <input type="checkbox" class="cb" id="lang-checkbox">
+          <span class="toggle">
+            <span class="left">UA</span>
+            <span class="right">ENG</span>
+          </span>
+        </label>
+      </div>
+    </header>
+
+    <main class="widget-wrapper">
+      <div class="dtek-app-window" id="dtek-app-root">
+        <!-- Rendered dynamically by main.js -->
+        <div class="dap-placeholder">
+          <span class="lang-ua">⚡ Завантаження DTEK Monitor...</span>
+          <span class="lang-en">⚡ Loading DTEK Monitor...</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <p>Created by Maksym Herashchenko</p>
+    </footer>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

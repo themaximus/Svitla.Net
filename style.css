@@ -1,0 +1,524 @@
+/* Custom Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #08090c;
+  color: #ffffff;
+  font-family: 'Segoe UI', 'Inter', -apple-system, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.wrapper {
+  width: 100%;
+  max-width: 480px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 15px;
+}
+
+.logo {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  background: linear-gradient(90deg, #00ff88, #00f0ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Switch & Language toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 76px;
+  height: 30px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 30px;
+  transition: .3s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.3);
+}
+
+.toggle .left, .toggle .right {
+  z-index: 1;
+  transition: color 0.3s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 32px;
+  height: 22px;
+  background: #00ff88;
+  border-radius: 15px;
+  transition: transform .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.switch input:checked + .toggle::after {
+  transform: translateX(36px);
+}
+
+.switch input:not(:checked) + .toggle .left {
+  color: #000;
+}
+
+.switch input:checked + .toggle .right {
+  color: #000;
+}
+
+.widget-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.app-footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 10px;
+}
+
+/* DTEK widget styles */
+.dtek-app-window {
+  width: 100%;
+  max-width: 360px;
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,255,136,0.15);
+}
+
+.dw-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 26px;
+  border: 2px solid rgba(0,255,136,0.5);
+  color: white;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.4s ease;
+  background: #0d1f18;
+  font-family: 'Segoe UI', 'Inter', sans-serif;
+  min-height: 600px;
+  user-select: none;
+}
+
+.dw-container::before {
+  content: '';
+  position: absolute;
+  inset: -35%;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(120% 120% at 20% 25%, rgba(10,255,170,0.3) 0%, rgba(10,255,170,0) 57%),
+    radial-gradient(120% 110% at 80% 20%, rgba(50,130,255,0.28) 0%, rgba(50,130,255,0) 60%),
+    radial-gradient(130% 120% at 50% 85%, rgba(195,85,255,0.22) 0%, rgba(195,85,255,0) 64%);
+  transform: translate3d(0,0,0) scale(1.1);
+  transition: opacity 260ms ease;
+}
+
+.dw-container > * { position: relative; z-index: 1; }
+
+.dw-container.aurora-on {
+  background: linear-gradient(140deg, rgba(8,20,30,0.96), rgba(10,34,30,0.92), rgba(30,15,42,0.95));
+}
+.dw-container.aurora-on::before {
+  opacity: 0.78;
+  animation: aurora-drift 16s linear infinite;
+}
+
+.dw-container.blur-on {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(13,31,24,0.8);
+}
+.dw-container.aurora-on.blur-on {
+  background: linear-gradient(140deg, rgba(8,20,30,0.78), rgba(10,34,30,0.72), rgba(30,15,42,0.76));
+}
+.dw-container.aurora-off.blur-off { background: #0d1f18; }
+
+@keyframes aurora-drift {
+  0% { transform: rotate(0deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(1.2) translate(10px, -10px); }
+  100% { transform: rotate(360deg) scale(1.1); }
+}
+
+/* Settings overlay */
+.dw-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10,10,15,0.98);
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 28px 20px 20px;
+  overflow-y: auto;
+  border-radius: 24px;
+}
+
+.dw-overlay.visible { display: flex; }
+
+.dw-overlay-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #aaa;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+.dw-form-select {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 12px;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+.dw-form-select option { background: #1a232c; color: white; }
+
+.dw-btn-big {
+  display: block;
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-family: inherit;
+}
+
+.dw-btn-save { background: #00ff88; color: black; }
+.dw-btn-save:active { opacity: 0.75; }
+.dw-btn-cancel { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; }
+
+.dw-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0 16px; }
+
+/* Toggle row */
+.dw-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+.dw-toggle-row:last-of-type { border-bottom: none; }
+
+.dw-toggle-label {
+  font-size: 13px;
+  color: rgba(255,255,255,0.8);
+  font-weight: 600;
+}
+.dw-toggle-label small { display: block; font-size: 11px; color: rgba(255,255,255,0.35); font-weight: 400; margin-top: 2px; }
+
+.dw-toggle-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.dw-toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.dw-toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.12);
+  transition: background 0.25s;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.dw-toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.4);
+  transition: transform 0.25s, background 0.25s;
+}
+
+.dw-toggle-switch input:checked ~ .dw-toggle-track {
+  background: rgba(0,255,136,0.25);
+  border-color: rgba(0,255,136,0.5);
+}
+.dw-toggle-switch input:checked ~ .dw-toggle-thumb {
+  transform: translateX(16px);
+  background: #00ff88;
+}
+
+.dw-author-info {
+  text-align: center;
+  margin-top: auto;
+  padding-top: 20px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+}
+.dw-author-link {
+  color: #00ff88;
+  text-decoration: none;
+  font-weight: bold;
+  transition: color 0.2s;
+}
+.dw-author-link:hover { color: white; }
+
+/* Header */
+.dw-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.dw-title {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 800;
+}
+
+.dw-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dw-icon-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s, box-shadow 0.3s, border-color 0.3s;
+}
+.dw-icon-btn:hover { background: rgba(255,255,255,0.25); }
+.dw-icon-btn.loading { animation: dw-spin 1s linear infinite; pointer-events: none; opacity: 0.5; }
+
+@keyframes dw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.dw-group-badge {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Day toggle */
+.dw-day-toggle {
+  display: flex;
+  position: relative;
+  background: rgb(12,20,28);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
+}
+
+.dw-day-btn {
+  flex: 1;
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  background: rgb(12,20,28);
+  color: rgba(255,255,255,0.7);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+  font-family: inherit;
+}
+.dw-day-btn.active {
+  background: rgb(35,54,67);
+  color: white;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14), 0 2px 10px rgba(0,0,0,0.25);
+}
+
+/* Status section */
+.dw-status-section { margin-bottom: 20px; }
+
+.dw-status-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dw-status-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background-color: #00ff88;
+  box-shadow: 0 0 15px #00ff88, 0 0 5px white;
+  transition: 0.3s;
+  flex-shrink: 0;
+}
+
+.dw-status-text {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.dw-schedule-date {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  margin-top: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Schedule Grid */
+.dw-schedule-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  flex-grow: 1;
+}
+
+.dw-schedule-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dw-schedule-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(8,14,20,0.62);
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
+  transition: transform 0.15s ease;
+}
+
+.dw-schedule-row.active {
+  background: rgba(35,54,67,0.82);
+  border-color: rgba(255,255,255,0.34);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 4px 14px rgba(0,0,0,0.25);
+  transform: scale(1.04);
+}
+
+.dw-time {
+  font-size: 13px;
+  color: rgba(255,255,255,0.82);
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+.dw-schedule-row.active .dw-time { color: white; text-shadow: 0 1px 4px rgba(0,0,0,0.45); }
+
+/* Outage indicator */
+.dw-indicator {
+  width: 34px; height: 16px;
+  border-radius: 6px;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.2);
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dw-indicator.power-off {
+  background: repeating-linear-gradient(45deg, #222, #222 2px, #444 2px, #444 4px);
+}
+
+.dw-indicator.power-half {
+  background: white;
+}
+.dw-indicator.power-half::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0;
+  width: 50%; height: 100%;
+  background: repeating-linear-gradient(45deg, #222, #222 2px, #444 2px, #444 4px);
+  z-index: 1;
+}
+
+/* Error/Placeholder */
+.dw-error-msg {
+  grid-column: 1 / span 2;
+  text-align: center;
+  color: #ff4444;
+  padding: 40px 10px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dw-no-data {
+  grid-column: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 14px;
+  opacity: 0.55;
+  padding: 20px 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.6);
+}
+
+.dap-placeholder {
+  padding: 3rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: monospace;
+  font-size: 0.85rem;
+}
