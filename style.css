@@ -5,17 +5,22 @@
   padding: 0;
 }
 
+html {
+  color-scheme: dark; /* dark scrollbars and form controls */
+}
+
 body {
   background-color: #08090c;
   color: #ffffff;
   font-family: 'Segoe UI', 'Inter', -apple-system, sans-serif;
   min-height: 100vh;
   display: flex;
-  justify-content: center;
-  align-items: center;
 }
 
+/* Centred with auto margins rather than align-items: a page taller than the window
+   then scrolls from its top instead of having the header cut off above the viewport */
 .wrapper {
+  margin: auto;
   width: 100%;
   max-width: 480px;
   padding: 20px;

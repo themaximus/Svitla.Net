@@ -26,6 +26,9 @@ static class Program
     const string MutexName = "DTEKWidgetLauncher"; // also the AppMutex of the installer
     const string ShowEventName = "DTEKWidgetShow";
 
+    [DllImport("user32.dll")]
+    static extern bool SetProcessDPIAware();
+
     [STAThread]
     static int Main()
     {
@@ -39,6 +42,8 @@ static class Program
                 return 0;
             }
 
+            // Without this Windows stretches the window as a bitmap on scaled displays and the text blurs
+            SetProcessDPIAware();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             using (var form = new WidgetForm(showEvent))
@@ -55,6 +60,7 @@ sealed class WidgetForm : Form
     // Fixed port: the settings are kept in localStorage, which is tied to the page origin
     const int Port = 47381;
     static readonly string Url = "http://127.0.0.1:" + Port + "/";
+    const int PageWidth = 420, PageHeight = 890;
 
     readonly string appDir = AppDomain.CurrentDomain.BaseDirectory;
     readonly string dataDir = Path.Combine(
@@ -75,8 +81,7 @@ sealed class WidgetForm : Form
         Text = Program.AppName;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         BackColor = Color.FromArgb(13, 31, 24); // the widget's background, shown until the page paints
-        ClientSize = new Size(440, 780);
-        MinimumSize = new Size(360, 480);
+        FitToPage();
         StartPosition = FormStartPosition.CenterScreen;
 
         webView.Dock = DockStyle.Fill;
@@ -86,6 +91,17 @@ sealed class WidgetForm : Form
         this.showEvent = showEvent;
         showWait = ThreadPool.RegisterWaitForSingleObject(showEvent,
             (state, timedOut) => BeginInvoke(new Action(RestoreAndActivate)), null, Timeout.Infinite, false);
+    }
+
+    // The whole page (header, widget, footer) is 420 x 885 CSS pixels; on a smaller screen it scrolls
+    void FitToPage()
+    {
+        float scale;
+        using (var g = CreateGraphics()) scale = g.DpiX / 96f;
+        ClientSize = new Size((int)(PageWidth * scale), (int)(PageHeight * scale));
+        MinimumSize = new Size(Width, (int)(480 * scale));
+        Rectangle screen = Screen.FromControl(this).WorkingArea;
+        if (Height > screen.Height) Height = screen.Height;
     }
 
     void RestoreAndActivate()
