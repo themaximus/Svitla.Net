@@ -26,5 +26,21 @@ Standalone web port of the DTEK outage schedule widget.
    http://localhost:3001
    ```
 
+## Windows installer
+
+`desktop\build.ps1` builds `build\DTEK-Widget-Setup-<version>.exe`. It needs Node.js
+(its `node.exe` is bundled, so users do not need Node) and Inno Setup 6
+(`winget install JRSoftware.InnoSetup`):
+
+```bash
+powershell -ExecutionPolicy Bypass -File desktop\build.ps1
+```
+
+The installed app (`%LOCALAPPDATA%\Programs\DTEK Widget`, no admin rights needed) runs the server
+on `127.0.0.1:47381` without a console and shows the widget as a Microsoft Edge app window.
+Closing the window stops the server. Window data and the server log live in
+`%LOCALAPPDATA%\DTEK Widget`. Setup offers a desktop shortcut and, optionally, start with Windows.
+The uninstaller removes the install folder, the data folder, shortcuts and the autostart entry.
+
 ## Author
 Maksym Herashchenko
