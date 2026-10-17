@@ -7,22 +7,29 @@ const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST; // unset = all interfaces; the desktop launcher passes 127.0.0.1
 
 const DEFAULT_REGION = 'https://www.dtek-dnem.com.ua/ua/shutdowns';
-const REGIONS = new Set([
-  'https://www.dtek-dnem.com.ua/ua/shutdowns',
-  'https://www.dtek-kem.com.ua/ua/shutdowns',
-  'https://www.dtek-krem.com.ua/ua/shutdowns',
-  'https://www.dtek-oem.com.ua/ua/shutdowns',
-  'https://www.dtek-dem.com.ua/ua/shutdowns',
+
+// DTEK pages put their bot protection (Imperva) in front of the schedule, so a plain server request
+// often gets a challenge page instead. The public outage-data-ua repository republishes the same
+// DisconSchedule.fact data every few minutes; it is used when DTEK refuses. Donetsk is not mirrored.
+const MIRROR_BASE = 'https://raw.githubusercontent.com/Baskerville42/outage-data-ua/main/data/';
+const REGIONS = new Map([ // page -> mirror file
+  ['https://www.dtek-dnem.com.ua/ua/shutdowns', 'dnipro.json'],
+  ['https://www.dtek-kem.com.ua/ua/shutdowns',  'kyiv.json'],
+  ['https://www.dtek-krem.com.ua/ua/shutdowns', 'kyiv-region.json'],
+  ['https://www.dtek-oem.com.ua/ua/shutdowns',  'odesa.json'],
+  ['https://www.dtek-dem.com.ua/ua/shutdowns',  null],
 ]);
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 5;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const CACHE_TTL_MS = 60_000;
+const PROTECTED_RETRY_MS = 15 * 60_000; // after a challenge page, go straight to the mirror for a while
 
-// One entry per whitelisted region, so the cache cannot grow beyond REGIONS.size
-const cache = new Map();    // region -> { time, result }
-const inFlight = new Map(); // region -> Promise<result>
+// One entry per whitelisted region, so these cannot grow beyond REGIONS.size
+const cache = new Map();          // region -> { time, result }
+const inFlight = new Map();       // region -> Promise<result>
+const protectedUntil = new Map(); // region -> timestamp
 
 // Serve static files (index.html, style.css, main.js) from the current folder
 app.use(express.static(path.join(__dirname)));
@@ -53,11 +60,7 @@ function getSchedule(regionUrl) {
 
   if (inFlight.has(regionUrl)) return inFlight.get(regionUrl);
 
-  const promise = fetchUrl(regionUrl)
-    .then(parseSchedule, err => {
-      console.error('[proxy] fetch error:', err.message);
-      return { httpStatus: 502, body: { status: 'error', message: 'Connection to DTEK failed' } };
-    })
+  const promise = fetchSchedule(regionUrl)
     .then(result => {
       if (result.body.status === 'success') cache.set(regionUrl, { time: Date.now(), result });
       return result;
@@ -68,7 +71,32 @@ function getSchedule(regionUrl) {
   return promise;
 }
 
-function parseSchedule(html) {
+/** The DTEK page first; the mirror when DTEK is unreachable or answers with its bot protection. */
+async function fetchSchedule(regionUrl) {
+  let result = null;
+  if (!(protectedUntil.get(regionUrl) > Date.now())) {
+    result = await fetchUrl(regionUrl).then(parsePage, err => {
+      console.error('[proxy] DTEK fetch error:', err.message);
+      return { httpStatus: 502, body: { status: 'error', message: 'Connection to DTEK failed' } };
+    });
+    if (result.body.status === 'success') return result;
+    if (result.body.status === 'protected') protectedUntil.set(regionUrl, Date.now() + PROTECTED_RETRY_MS);
+  }
+
+  const mirrorFile = REGIONS.get(regionUrl);
+  if (!mirrorFile) {
+    return result || { body: { status: 'protected', message: 'Bot protection active. Try again later.' } };
+  }
+
+  const mirrored = await fetchUrl(MIRROR_BASE + mirrorFile).then(parseMirror, err => {
+    console.error('[proxy] mirror fetch error:', err.message);
+    return { httpStatus: 502, body: { status: 'error', message: 'Connection to the schedule mirror failed' } };
+  });
+  // When both fail, DTEK's own answer (e.g. "protected") explains more than the mirror's
+  return mirrored.body.status === 'success' || !result ? mirrored : result;
+}
+
+function parsePage(html) {
   const match = html.match(/DisconSchedule\.fact\s*=\s*(\{.*?\})\s*(?:;|<\/script>)/s);
   if (!match) {
     if (isBotProtection(html)) {
@@ -76,16 +104,26 @@ function parseSchedule(html) {
     }
     return { body: { status: 'error', message: 'Schedule data not found on page' } };
   }
+  return parseFact(match[1], 'dtek', fact => fact);
+}
 
+// The mirror file wraps the same object: { regionId, lastUpdated, fact, ... }
+function parseMirror(json) {
+  return parseFact(json, 'mirror', doc => doc.fact);
+}
+
+// fact = { data: { <day timestamp>: { GPV1.1: { 1..24: 'yes' | 'no' | 'first' | 'second' } } }, today, update }
+function parseFact(json, source, pickFact) {
+  let fact;
   try {
-    const parsed = JSON.parse(match[1]);
-    if (parsed?.data) {
-      return { body: { status: 'success', rawFact: parsed.data, today: parsed.today ?? null } };
-    }
-    return { body: { status: 'error', message: 'Invalid data structure' } };
+    fact = pickFact(JSON.parse(json));
   } catch (e) {
     return { body: { status: 'error', message: 'JSON parsing failed' } };
   }
+  if (!fact?.data) return { body: { status: 'error', message: 'Invalid data structure' } };
+  return {
+    body: { status: 'success', rawFact: fact.data, today: fact.today ?? null, update: fact.update ?? null, source },
+  };
 }
 
 function isBotProtection(html) {
