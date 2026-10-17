@@ -7,6 +7,15 @@ const API_URL = '/api/dtek';
 const UPDATE_INTERVAL_MS = 300_000;
 const DEFAULT_REGION = 'https://www.dtek-dnem.com.ua/ua/shutdowns';
 
+// The Windows app opens the page as "/?desktop" in its own frameless, transparent window: only the
+// widget is shown, and window actions (move, hide to tray, close) go to the app via WebView2 messages
+const DESKTOP = new URLSearchParams(location.search).has('desktop');
+if (DESKTOP) document.documentElement.classList.add('desktop');
+
+function postToApp(message) {
+  if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(message);
+}
+
 const REGIONS = {
   'https://www.dtek-dnem.com.ua/ua/shutdowns': { ua: 'Дніпро та область', en: 'Dnipro & Region' },
   'https://www.dtek-kem.com.ua/ua/shutdowns':  { ua: 'Київ (місто)', en: 'Kyiv (City)' },
@@ -81,6 +90,11 @@ const TRANSLATIONS = {
     bgAnimation: 'Анімація фону',
     performanceImpact: 'Підвищить навантаження на систему',
     blurToggle: 'Прозорість / розмиття',
+    pinPosition: 'Закріпити розташування',
+    pinHint: 'Віджет не можна буде перетягнути',
+    language: 'Мова',
+    hideToTray: 'Сховати в трей',
+    closeApp: 'Закрити',
     author: 'Автор: Максим',
     title: 'Графік ДТЕК',
     refresh: 'Оновити',
@@ -108,6 +122,11 @@ const TRANSLATIONS = {
     bgAnimation: 'Background Animation',
     performanceImpact: 'Increases system load',
     blurToggle: 'Transparency / Blur',
+    pinPosition: 'Lock position',
+    pinHint: 'The widget cannot be dragged',
+    language: 'Language',
+    hideToTray: 'Hide to tray',
+    closeApp: 'Close',
     author: 'Author: Maksym',
     title: 'DTEK Schedule',
     refresh: 'Refresh',
@@ -136,8 +155,10 @@ function loadSettings() {
   try { return JSON.parse(localStorage.getItem('dtek-settings') || '{}'); } catch { return {}; }
 }
 
+const SETTINGS_VERSION = 2;
+
 function saveSettings(patch) {
-  const s = Object.assign(loadSettings(), patch);
+  const s = Object.assign(loadSettings(), patch, { v: SETTINGS_VERSION });
   localStorage.setItem('dtek-settings', JSON.stringify(s));
   return s;
 }
@@ -147,6 +168,7 @@ let state = {
   region:    DEFAULT_REGION,
   useAurora: false,
   useBlur:   false,
+  pinned:    false, // desktop app: the widget cannot be dragged
   selectedDay: 0,
   currentRawData: null,
   todayKey: null,
@@ -164,16 +186,20 @@ function initLanguageSwitcher() {
   const savedLang = localStorage.getItem('app-lang') || 'ua';
   document.documentElement.setAttribute('lang', savedLang);
 
+  postToApp('lang:' + savedLang); // the app translates its tray menu
+
   const checkbox = document.getElementById('lang-checkbox');
   if (checkbox) {
     checkbox.checked = (savedLang === 'en');
-    checkbox.addEventListener('change', () => {
-      const targetLang = checkbox.checked ? 'en' : 'ua';
-      localStorage.setItem('app-lang', targetLang);
-      document.documentElement.setAttribute('lang', targetLang);
-      window.dispatchEvent(new CustomEvent('lang-changed', { detail: targetLang }));
-    });
+    checkbox.addEventListener('change', () => setLanguage(checkbox.checked ? 'en' : 'ua'));
   }
+}
+
+function setLanguage(lang) {
+  localStorage.setItem('app-lang', lang);
+  document.documentElement.setAttribute('lang', lang);
+  postToApp('lang:' + lang);
+  window.dispatchEvent(new CustomEvent('lang-changed', { detail: lang }));
 }
 
 // ── App Start ──
@@ -231,8 +257,12 @@ function restoreSavedSettings() {
   const saved = loadSettings();
   state.group     = saved.group  || null;
   state.region    = saved.region || DEFAULT_REGION;
-  state.useAurora = saved.useAurora || false;
-  state.useBlur   = saved.useBlur   || false;
+  // The desktop widget starts transparent and animated; both can be switched off in the settings.
+  // Settings saved before version 2 stored the old "off" defaults rather than a choice, so they are ignored.
+  const appearanceSaved = saved.v >= SETTINGS_VERSION;
+  state.useAurora = appearanceSaved ? saved.useAurora : DESKTOP;
+  state.useBlur   = appearanceSaved ? saved.useBlur   : DESKTOP;
+  state.pinned    = saved.pinned    || false;
 }
 
 function scheduleUpdates() {
@@ -294,11 +324,37 @@ function renderShell(root) {
           <div class="dw-toggle-thumb"></div>
         </div>
       </label>
+${DESKTOP ? `
+      <label class="dw-toggle-row">
+        <div class="dw-toggle-label">
+          ${t('pinPosition')}
+          <small>${t('pinHint')}</small>
+        </div>
+        <div class="dw-toggle-switch">
+          <input type="checkbox" id="dw-chk-pin" ${state.pinned ? 'checked' : ''}>
+          <div class="dw-toggle-track"></div>
+          <div class="dw-toggle-thumb"></div>
+        </div>
+      </label>
+
+      <div class="dw-toggle-row">
+        <div class="dw-toggle-label">${t('language')}</div>
+        <label class="switch lang-switcher">
+          <input type="checkbox" class="cb" id="dw-lang-checkbox" ${currentLang === 'en' ? 'checked' : ''}>
+          <span class="toggle"><span class="left">UA</span><span class="right">ENG</span></span>
+        </label>
+      </div>` : ''}
 
       <div class="dw-author-info">
         ${t('author')} | <a href="https://t.me/etojemaximus" target="_blank" class="dw-author-link">@etojemaximus</a>
       </div>
     </div>
+
+${DESKTOP ? `
+    <div class="dw-window-actions">
+      <div id="dw-hide-btn" class="dw-window-btn" title="${t('hideToTray')}">–</div>
+      <div id="dw-close-btn" class="dw-window-btn dw-window-close" title="${t('closeApp')}">✕</div>
+    </div>` : ''}
 
     <!-- Widget Body -->
     <div class="dw-header">
@@ -342,13 +398,20 @@ function bindEvents() {
     state.region    = region;
     state.useAurora = document.getElementById('dw-chk-aurora').checked;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
-    saveSettings({ group: state.group, region: state.region, useAurora: state.useAurora, useBlur: state.useBlur });
+    const pin = document.getElementById('dw-chk-pin');
+    if (pin) state.pinned = pin.checked;
+    saveSettings({
+      group: state.group, region: state.region,
+      useAurora: state.useAurora, useBlur: state.useBlur, pinned: state.pinned,
+    });
     applyVisuals();
     closeSettings();
     startUpdate();
   });
 
   document.getElementById('dw-region-select').addEventListener('change', e => refreshGroupSelect(e.target.value));
+
+  if (DESKTOP) bindDesktopEvents();
 
   document.getElementById('dw-chk-aurora').addEventListener('change', e => { state.useAurora = e.target.checked; applyVisuals(); });
   document.getElementById('dw-chk-blur')  .addEventListener('change', e => { state.useBlur   = e.target.checked; applyVisuals(); });
@@ -363,6 +426,22 @@ function bindEvents() {
   });
 }
 
+// Interactive parts of the widget; a press anywhere else moves the window (unless it is pinned)
+const NOT_DRAGGABLE = 'button, select, input, label, a, .dw-icon-btn, .dw-group-badge, .dw-window-btn, .dw-overlay';
+
+function bindDesktopEvents() {
+  document.getElementById('dw-hide-btn') .addEventListener('click', () => postToApp('hide'));
+  document.getElementById('dw-close-btn').addEventListener('click', () => postToApp('close'));
+  document.getElementById('dw-lang-checkbox').addEventListener('change', e => setLanguage(e.target.checked ? 'en' : 'ua'));
+
+  document.getElementById('dw-container').addEventListener('mousedown', e => {
+    if (e.button === 0 && !state.pinned && !e.target.closest(NOT_DRAGGABLE)) {
+      e.preventDefault();
+      postToApp('drag');
+    }
+  });
+}
+
 function openSettings() {
   const overlay = document.getElementById('dw-overlay');
   if (!overlay) return;
@@ -372,6 +451,8 @@ function openSettings() {
   refreshGroupSelect(state.region);
   document.getElementById('dw-chk-aurora')  .checked = state.useAurora;
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
+  const pin = document.getElementById('dw-chk-pin');
+  if (pin) pin.checked = state.pinned;
   // Nothing to go back to until a group has been saved once
   document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
 }
