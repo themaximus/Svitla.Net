@@ -2,7 +2,10 @@
  * main.js — Standalone web port of the DTEK outage schedule widget.
  */
 
-const PROXY_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin;
+// The page is served by server.js itself, so the API lives on the same origin and port
+const API_URL = '/api/dtek';
+const UPDATE_INTERVAL_MS = 300_000;
+const DEFAULT_REGION = 'https://www.dtek-dnem.com.ua/ua/shutdowns';
 
 const REGIONS = {
   'https://www.dtek-dnem.com.ua/ua/shutdowns': { ua: 'Дніпро та область', en: 'Dnipro & Region' },
@@ -49,7 +52,7 @@ const TRANSLATIONS = {
     hasLight: 'Світло є',
     scheduleFor: 'ГРАФІК НА',
     notPublished: 'Графік ще не опубліковано',
-    cfProtection: '☁ Cloudflare захист — спробуйте пізніше',
+    botProtection: '☁ Сайт ДТЕК увімкнув захист від ботів — спробуйте пізніше',
     proxyUnavailable: '⚠ Проксі-сервер недоступний — запустіть node server.js',
   },
   en: {
@@ -75,7 +78,7 @@ const TRANSLATIONS = {
     hasLight: 'Power On',
     scheduleFor: 'SCHEDULE FOR',
     notPublished: 'Schedule not published yet',
-    cfProtection: '☁ Cloudflare protection — try again later',
+    botProtection: '☁ DTEK site bot protection is active — try again later',
     proxyUnavailable: '⚠ Proxy server offline — run node server.js',
   }
 };
@@ -97,13 +100,19 @@ function saveSettings(patch) {
 
 let state = {
   group:     null,
-  region:    'https://www.dtek-dnem.com.ua/ua/shutdowns',
+  region:    DEFAULT_REGION,
   useAurora: false,
   useBlur:   false,
   selectedDay: 0,
   currentRawData: null,
+  todayKey: null,
   loading: false,
 };
+
+let updateTimer = null;
+let hourTimer = null;
+let pendingRequest = null; // AbortController of the running fetch
+let pendingRegion  = null;
 
 // ── Language Toggle early init ──
 function initLanguageSwitcher() {
@@ -129,22 +138,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('dtek-app-root');
   if (!root) return;
 
-  const saved = loadSettings();
-  state.group     = saved.group  || null;
-  state.region    = saved.region || 'https://www.dtek-dnem.com.ua/ua/shutdowns';
-  state.useAurora = saved.useAurora || false;
-  state.useBlur   = saved.useBlur   || false;
+  restoreSavedSettings();
 
   renderShell(root);
   applyVisuals();
 
-  if (!state.group || !state.region) {
+  if (!state.group) {
     openSettings();
   } else {
     startUpdate();
   }
 
-  setInterval(startUpdate, 300_000);
+  scheduleUpdates();
+
+  // Do not poll DTEK while the page is hidden; catch up as soon as it is shown again
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearInterval(updateTimer);
+      clearTimeout(hourTimer);
+    } else {
+      startUpdate();
+      scheduleUpdates();
+    }
+  });
 
   window.addEventListener('lang-changed', () => {
     const rootEl = document.getElementById('dtek-app-root');
@@ -165,6 +181,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+function restoreSavedSettings() {
+  const saved = loadSettings();
+  state.group     = saved.group  || null;
+  state.region    = saved.region || DEFAULT_REGION;
+  state.useAurora = saved.useAurora || false;
+  state.useBlur   = saved.useBlur   || false;
+}
+
+function scheduleUpdates() {
+  clearInterval(updateTimer);
+  updateTimer = setInterval(startUpdate, UPDATE_INTERVAL_MS);
+
+  // Refresh exactly on the hour so the "now" row and the power status do not lag behind
+  clearTimeout(hourTimer);
+  const now = new Date();
+  const msToNextHour = (60 - now.getMinutes()) * 60_000 - now.getSeconds() * 1000 - now.getMilliseconds();
+  hourTimer = setTimeout(() => { startUpdate(); scheduleUpdates(); }, msToNextHour + 1000);
+}
 
 function renderShell(root) {
   const currentLang = document.documentElement.lang || 'ua';
@@ -255,11 +290,13 @@ function bindEvents() {
   document.getElementById('dw-refresh-btn') .addEventListener('click', startUpdate);
   document.getElementById('dw-settings-btn').addEventListener('click', openSettings);
   document.getElementById('dw-group-tag')   .addEventListener('click', openSettings);
-  document.getElementById('dw-cancel-btn')  .addEventListener('click', closeSettings);
+  document.getElementById('dw-cancel-btn')  .addEventListener('click', cancelSettings);
 
   document.getElementById('dw-save-btn').addEventListener('click', () => {
+    const region = document.getElementById('dw-region-select').value;
+    if (region !== state.region) state.currentRawData = null; // never show one region's data under another's name
     state.group     = document.getElementById('dw-group-select').value;
-    state.region    = document.getElementById('dw-region-select').value;
+    state.region    = region;
     state.useAurora = document.getElementById('dw-chk-aurora').checked;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
     saveSettings({ group: state.group, region: state.region, useAurora: state.useAurora, useBlur: state.useBlur });
@@ -289,14 +326,20 @@ function openSettings() {
   document.getElementById('dw-region-select').value   = state.region;
   document.getElementById('dw-chk-aurora')  .checked = state.useAurora;
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
-  if (state.group || state.region) {
-    document.getElementById('dw-cancel-btn').style.display = 'block';
-  }
+  // Nothing to go back to until a group has been saved once
+  document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
 }
 
 function closeSettings() {
   const overlay = document.getElementById('dw-overlay');
   if (overlay) overlay.classList.remove('visible');
+}
+
+// The appearance toggles preview live, so undo the preview when the changes are not saved
+function cancelSettings() {
+  restoreSavedSettings();
+  applyVisuals();
+  closeSettings();
 }
 
 function applyVisuals() {
@@ -309,41 +352,66 @@ function applyVisuals() {
 }
 
 async function startUpdate() {
-  if (!state.group || !state.region) { openSettings(); return; }
-  if (state.loading) return;
-  state.loading = true;
+  // Timers fire while the settings are still being filled in; they must not reopen the overlay
+  if (!state.group || !state.region) return;
+  // A request for the same region is already running; one for an old region is dropped
+  if (state.loading && pendingRegion === state.region) return;
+  if (pendingRequest) pendingRequest.abort();
 
-  const btn = document.getElementById('dw-refresh-btn');
-  if (btn) btn.classList.add('loading');
+  const controller = new AbortController();
+  pendingRequest = controller;
+  pendingRegion  = state.region;
+  state.loading  = true;
+
+  setRefreshSpinner(true);
   const statusEl = document.getElementById('dw-status-text');
   if (statusEl) statusEl.innerText = t('updating');
 
   try {
-    const url = `${PROXY_BASE}/api/dtek?region=${encodeURIComponent(state.region)}`;
-    const res  = await fetch(url);
+    const url = `${API_URL}?region=${encodeURIComponent(state.region)}`;
+    const res  = await fetch(url, { signal: controller.signal });
     const data = await res.json();
 
     if (data.status === 'success') {
       state.currentRawData = data.rawFact;
+      state.todayKey       = data.today != null ? String(data.today) : null;
       updateInterface();
-    } else if (data.status === 'cloudflare') {
-      setError(t('cfProtection'));
+    } else if (data.status === 'protected') {
+      setError(t('botProtection'));
     } else {
       setError(data.message || t('error'));
     }
   } catch (e) {
-    setError(t('proxyUnavailable'));
+    if (e.name !== 'AbortError') setError(t('proxyUnavailable'));
   } finally {
-    state.loading = false;
-    if (btn) btn.classList.remove('loading');
+    // A newer request may have taken over while this one was being aborted
+    if (pendingRequest === controller) {
+      pendingRequest = null;
+      pendingRegion  = null;
+      state.loading  = false;
+      setRefreshSpinner(false);
+    }
   }
 }
 
+// Looked up on every call: a language switch re-renders the shell and replaces the button
+function setRefreshSpinner(on) {
+  const btn = document.getElementById('dw-refresh-btn');
+  if (btn) btn.classList.toggle('loading', on);
+}
+
 function setError(msg) {
+  // Do not let a language switch bring back a schedule that failed to refresh
+  state.currentRawData = null;
   const statusEl = document.getElementById('dw-status-text');
   if (statusEl) statusEl.innerText = t('error');
   const gridRoot = document.getElementById('dw-grid-root');
-  if (gridRoot) gridRoot.innerHTML = `<div class="dw-error-msg">${msg}</div>`;
+  if (gridRoot) {
+    const box = document.createElement('div');
+    box.className = 'dw-error-msg';
+    box.textContent = msg;
+    gridRoot.replaceChildren(box);
+  }
 }
 
 function updateInterface() {
@@ -355,9 +423,13 @@ function updateInterface() {
   if (groupTag) groupTag.innerText = `${regionShort} · ${groupLabel}`;
 
   if (!state.currentRawData) return;
-  const timestamps   = Object.keys(state.currentRawData).sort();
-  const todayRaw     = timestamps[0] ? state.currentRawData[timestamps[0]][state.group] : null;
-  const tomorrowRaw  = timestamps[1] ? state.currentRawData[timestamps[1]][state.group] : null;
+  // Keys are unix timestamps of the days; DTEK names "today" explicitly, the earliest day is the fallback
+  const timestamps   = Object.keys(state.currentRawData).sort((a, b) => Number(a) - Number(b));
+  const todayIndex   = Math.max(0, timestamps.indexOf(state.todayKey));
+  const todayKey     = timestamps[todayIndex];
+  const tomorrowKey  = timestamps[todayIndex + 1];
+  const todayRaw     = todayKey    ? state.currentRawData[todayKey][state.group]    : null;
+  const tomorrowRaw  = tomorrowKey ? state.currentRawData[tomorrowKey][state.group] : null;
 
   function convertToGrid(h) {
     const g = {};
