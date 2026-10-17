@@ -61,6 +61,7 @@ sealed class WidgetForm : Form
     const int Port = 47381;
     static readonly string Url = "http://127.0.0.1:" + Port + "/";
     const int PageWidth = 420, PageHeight = 890;
+    float dpiScale = 1;
 
     readonly string appDir = AppDomain.CurrentDomain.BaseDirectory;
     readonly string dataDir = Path.Combine(
@@ -93,15 +94,28 @@ sealed class WidgetForm : Form
             (state, timedOut) => BeginInvoke(new Action(RestoreAndActivate)), null, Timeout.Infinite, false);
     }
 
-    // The whole page (header, widget, footer) is 420 x 885 CSS pixels; on a smaller screen it scrolls
+    // The whole page (header, widget, footer) is 420 x 885 CSS pixels
     void FitToPage()
     {
-        float scale;
-        using (var g = CreateGraphics()) scale = g.DpiX / 96f;
-        ClientSize = new Size((int)(PageWidth * scale), (int)(PageHeight * scale));
-        MinimumSize = new Size(Width, (int)(480 * scale));
+        using (var g = CreateGraphics()) dpiScale = g.DpiX / 96f;
+        ClientSize = new Size((int)(PageWidth * dpiScale), (int)(PageHeight * dpiScale));
+        MinimumSize = new Size((int)(320 * dpiScale), (int)(400 * dpiScale));
         Rectangle screen = Screen.FromControl(this).WorkingArea;
         if (Height > screen.Height) Height = screen.Height;
+    }
+
+    // A window shorter than the page (small screen, user resize) shows the page scaled down, not cut off
+    void ZoomToFit()
+    {
+        if (webView.CoreWebView2 == null) return;
+        double fit = Math.Min(ClientSize.Width / (PageWidth * dpiScale), ClientSize.Height / (PageHeight * dpiScale));
+        webView.ZoomFactor = Math.Max(0.5, Math.Min(1.0, fit));
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (WindowState != FormWindowState.Minimized) ZoomToFit();
     }
 
     void RestoreAndActivate()
@@ -129,6 +143,7 @@ sealed class WidgetForm : Form
             return;
         }
         ConfigureBrowser(webView.CoreWebView2);
+        ZoomToFit();
 
         if (!StartServer()) return;
         if (!await Task.Run(() => WaitForServer()))
