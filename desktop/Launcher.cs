@@ -1,89 +1,170 @@
-// Desktop launcher for the DTEK widget (Windows).
+// Desktop app for the DTEK widget (Windows).
 //
 // Starts the bundled node.exe with server.js on the loopback interface, without a console window,
-// and opens the widget as a standalone Microsoft Edge app window with its own profile in
-// %LOCALAPPDATA%\DTEK Widget. When that window is closed, the server is stopped as well.
-// The server process is attached to a kill-on-close job object, so it never outlives the launcher.
-// Extra command-line arguments are passed on to Edge (for example --headless=new for a smoke test).
+// and shows the page in the app's own window through WebView2, the browser engine that is part of
+// Windows. Browser data lives in %LOCALAPPDATA%\DTEK Widget, separate from the user's browsers.
+// The server lives exactly as long as the window: it is attached to a kill-on-close job object,
+// so it never outlives the app, even if the app crashes.
 //
 // Built by desktop\build.ps1 with the C# compiler that ships with .NET Framework 4.
 
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Win32;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
-static class Launcher
+static class Program
 {
-    const string AppName = "DTEK Widget";
+    public const string AppName = "DTEK Widget";
     const string MutexName = "DTEKWidgetLauncher"; // also the AppMutex of the installer
-    // Fixed port: the settings are kept in localStorage, which is tied to the page origin
-    const int Port = 47381;
-
-    static string Url { get { return "http://127.0.0.1:" + Port + "/"; } }
+    const string ShowEventName = "DTEKWidgetShow";
 
     [STAThread]
     static int Main()
     {
-        string appDir = AppDomain.CurrentDomain.BaseDirectory;
-        string dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
-        string profileDir = Path.Combine(dataDir, "WebView");
-        Directory.CreateDirectory(dataDir);
-
-        string browser = FindEdge();
-        if (browser == null)
-        {
-            Fail("Microsoft Edge is not installed. It is required to show the widget window.");
-            return 1;
-        }
-
         bool firstInstance;
         using (var mutex = new Mutex(true, MutexName, out firstInstance))
+        using (var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName))
         {
             if (!firstInstance)
             {
-                // The first launcher owns the server; an extra window just joins its Edge instance
-                OpenWindow(browser, profileDir).Dispose();
+                showEvent.Set(); // the running instance brings its window to the front
                 return 0;
             }
 
-            using (var job = new KillOnCloseJob())
-            using (var server = StartServer(appDir, dataDir))
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            using (var form = new WidgetForm(showEvent))
             {
-                if (server == null) return 1;
-                job.Add(server);
-
-                if (!WaitForServer(server))
-                {
-                    Fail("The widget server did not start. See " + Path.Combine(dataDir, "server.log"));
-                    return 1;
-                }
-
-                using (var window = OpenWindow(browser, profileDir))
-                {
-                    // Edge keeps the first process of a profile alive until its last window is closed
-                    window.WaitForExit();
-                }
-
-                if (!server.HasExited) server.Kill();
+                Application.Run(form);
+                return form.ExitCode;
             }
         }
-        return 0;
+    }
+}
+
+sealed class WidgetForm : Form
+{
+    // Fixed port: the settings are kept in localStorage, which is tied to the page origin
+    const int Port = 47381;
+    static readonly string Url = "http://127.0.0.1:" + Port + "/";
+
+    readonly string appDir = AppDomain.CurrentDomain.BaseDirectory;
+    readonly string dataDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Program.AppName);
+
+    readonly EventWaitHandle showEvent;
+    readonly RegisteredWaitHandle showWait;
+    readonly KillOnCloseJob job = new KillOnCloseJob();
+    readonly WebView2 webView = new WebView2();
+    StreamWriter log;
+    Process server;
+    bool closing;
+
+    public int ExitCode { get; private set; }
+
+    public WidgetForm(EventWaitHandle showEvent)
+    {
+        Text = Program.AppName;
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        BackColor = Color.FromArgb(13, 31, 24); // the widget's background, shown until the page paints
+        ClientSize = new Size(440, 780);
+        MinimumSize = new Size(360, 480);
+        StartPosition = FormStartPosition.CenterScreen;
+
+        webView.Dock = DockStyle.Fill;
+        webView.DefaultBackgroundColor = BackColor;
+        Controls.Add(webView);
+
+        this.showEvent = showEvent;
+        showWait = ThreadPool.RegisterWaitForSingleObject(showEvent,
+            (state, timedOut) => BeginInvoke(new Action(RestoreAndActivate)), null, Timeout.Infinite, false);
     }
 
-    static Process StartServer(string appDir, string dataDir)
+    void RestoreAndActivate()
+    {
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    protected override async void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        Directory.CreateDirectory(dataDir);
+        // Overwritten on every start, so the log cannot grow without bound
+        log = new StreamWriter(Path.Combine(dataDir, "server.log"), false) { AutoFlush = true };
+
+        try
+        {
+            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataDir, "WebView2"));
+            await webView.EnsureCoreWebView2Async(environment);
+        }
+        catch (WebView2RuntimeNotFoundException)
+        {
+            Fail("Microsoft Edge WebView2 Runtime is not installed.\n" +
+                 "Download it from https://go.microsoft.com/fwlink/p/?LinkId=2124703");
+            return;
+        }
+        ConfigureBrowser(webView.CoreWebView2);
+
+        if (!StartServer()) return;
+        if (!await Task.Run(() => WaitForServer()))
+        {
+            Fail("The widget server did not start. See " + Path.Combine(dataDir, "server.log"));
+            return;
+        }
+        webView.CoreWebView2.Navigate(Url);
+    }
+
+    void ConfigureBrowser(CoreWebView2 core)
+    {
+        var settings = core.Settings;
+        settings.AreDevToolsEnabled = false;
+        settings.AreDefaultContextMenusEnabled = false;
+        settings.IsStatusBarEnabled = false;
+        settings.IsZoomControlEnabled = false;
+        settings.AreBrowserAcceleratorKeysEnabled = false;
+        settings.IsGeneralAutofillEnabled = false;
+        settings.IsPasswordAutosaveEnabled = false;
+
+        // The window shows only the widget; links to other sites open in the user's browser
+        core.NewWindowRequested += (s, e) => { e.Handled = true; OpenExternal(e.Uri); };
+        core.NavigationStarting += (s, e) =>
+        {
+            if (!e.Uri.StartsWith(Url, StringComparison.OrdinalIgnoreCase))
+            {
+                e.Cancel = true;
+                OpenExternal(e.Uri);
+            }
+        };
+        core.NavigationCompleted += (s, e) =>
+            Log("[app] page loaded: " + (e.IsSuccess ? "ok" : e.WebErrorStatus.ToString()));
+    }
+
+    static void OpenExternal(string uri)
+    {
+        if (uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+        }
+    }
+
+    bool StartServer()
     {
         string node = Path.Combine(appDir, "node", "node.exe");
         string script = Path.Combine(appDir, "app", "server.js");
         if (!File.Exists(node) || !File.Exists(script))
         {
             Fail("The installation is damaged: " + (File.Exists(node) ? script : node) + " is missing.");
-            return null;
+            return false;
         }
 
         var psi = new ProcessStartInfo(node, "\"" + script + "\"")
@@ -97,21 +178,23 @@ static class Launcher
         psi.EnvironmentVariables["HOST"] = "127.0.0.1";
         psi.EnvironmentVariables["PORT"] = Port.ToString();
 
-        // Overwritten on every start, so the log cannot grow without bound
-        var log = new StreamWriter(Path.Combine(dataDir, "server.log"), false) { AutoFlush = true };
-        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        DataReceivedEventHandler write = (s, e) => { if (e.Data != null) lock (log) log.WriteLine(e.Data); };
-        process.OutputDataReceived += write;
-        process.ErrorDataReceived += write;
-        process.Exited += (s, e) => { process.WaitForExit(); lock (log) log.Dispose(); };
+        server = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        server.OutputDataReceived += (s, e) => Log(e.Data);
+        server.ErrorDataReceived += (s, e) => Log(e.Data);
+        server.Exited += (s, e) =>
+        {
+            if (!closing) BeginInvoke(new Action(() => Fail("The widget server stopped unexpectedly. See " +
+                                                            Path.Combine(dataDir, "server.log"))));
+        };
 
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        return process;
+        server.Start();
+        job.Add(server);
+        server.BeginOutputReadLine();
+        server.BeginErrorReadLine();
+        return true;
     }
 
-    static bool WaitForServer(Process server)
+    bool WaitForServer()
     {
         for (int i = 0; i < 100 && !server.HasExited; i++)
         {
@@ -130,104 +213,102 @@ static class Launcher
         return false;
     }
 
-    static Process OpenWindow(string browser, string profileDir)
+    void Log(string line)
     {
-        string args = string.Join(" ", new[]
-        {
-            "--app=" + Url,
-            "--user-data-dir=\"" + profileDir + "\"",
-            "--window-size=460,820",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-mode",
-        }.Concat(Environment.GetCommandLineArgs().Skip(1).Select(a => "\"" + a + "\"")));
-        return Process.Start(new ProcessStartInfo(browser, args) { UseShellExecute = false });
+        if (line == null) return;
+        lock (this) if (log != null) log.WriteLine(line);
     }
 
-    static string FindEdge()
+    void Fail(string message)
     {
-        const string key = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe";
-        foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
-        {
-            using (var k = hive.OpenSubKey(key))
-            {
-                var path = k == null ? null : k.GetValue(null) as string;
-                if (!string.IsNullOrEmpty(path) && File.Exists(path)) return path;
-            }
-        }
-        return null;
+        if (closing) return;
+        closing = true;
+        ExitCode = 1;
+        MessageBox.Show(this, message, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        Close();
     }
 
-    static void Fail(string message)
+    protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        closing = true;
+        showWait.Unregister(null);
+        webView.Dispose(); // shuts the WebView2 browser processes down before the app exits
+        if (server != null)
+        {
+            if (!server.HasExited) server.Kill();
+            server.WaitForExit(); // also drains the redirected output
+            server.Dispose();
+        }
+        job.Dispose();
+        lock (this) if (log != null) { log.Dispose(); log = null; }
+        base.OnFormClosed(e);
+    }
+}
+
+/// <summary>Job object that terminates its processes when the app exits, even if it crashes.</summary>
+sealed class KillOnCloseJob : IDisposable
+{
+    const int JobObjectExtendedLimitInformation = 9;
+    const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+
+    readonly IntPtr handle = CreateJobObject(IntPtr.Zero, null);
+
+    public KillOnCloseJob()
+    {
+        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        int size = Marshal.SizeOf(info);
+        IntPtr ptr = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(info, ptr, false);
+            SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ptr, (uint)size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 
-    /// <summary>Job object that terminates its processes when the launcher exits, even if it crashes.</summary>
-    sealed class KillOnCloseJob : IDisposable
+    public void Add(Process process) { AssignProcessToJobObject(handle, process.Handle); }
+
+    public void Dispose() { CloseHandle(handle); }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION
     {
-        const int JobObjectExtendedLimitInformation = 9;
-        const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
-
-        readonly IntPtr handle = CreateJobObject(IntPtr.Zero, null);
-
-        public KillOnCloseJob()
-        {
-            var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            int size = Marshal.SizeOf(info);
-            IntPtr ptr = Marshal.AllocHGlobal(size);
-            try
-            {
-                Marshal.StructureToPtr(info, ptr, false);
-                SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ptr, (uint)size);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(ptr);
-            }
-        }
-
-        public void Add(Process process) { AssignProcessToJobObject(handle, process.Handle); }
-
-        public void Dispose() { CloseHandle(handle); }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct JOBOBJECT_BASIC_LIMIT_INFORMATION
-        {
-            public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
-            public uint LimitFlags;
-            public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
-            public uint ActiveProcessLimit;
-            public UIntPtr Affinity;
-            public uint PriorityClass, SchedulingClass;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct IO_COUNTERS
-        {
-            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
-            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-        {
-            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
-            public IO_COUNTERS IoInfo;
-            public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        static extern IntPtr CreateJobObject(IntPtr attributes, string name);
-
-        [DllImport("kernel32.dll")]
-        static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
-
-        [DllImport("kernel32.dll")]
-        static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-
-        [DllImport("kernel32.dll")]
-        static extern bool CloseHandle(IntPtr handle);
+        public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+        public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+
+    [DllImport("kernel32.dll")]
+    static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+
+    [DllImport("kernel32.dll")]
+    static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr handle);
 }

@@ -3,7 +3,7 @@
 ;
 ; Per-user install into %LOCALAPPDATA%\Programs\DTEK Widget, no administrator rights needed.
 ; The uninstaller removes exactly what this app puts on the machine: the install folder,
-; its data folder %LOCALAPPDATA%\DTEK Widget (window profile, server log), its shortcuts,
+; its data folder %LOCALAPPDATA%\DTEK Widget (WebView2 browser data, server log), its shortcuts,
 ; its autostart value and its own uninstall entry.
 
 #ifndef AppVersion
@@ -78,7 +78,7 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 Type: filesandordirs; Name: "{app}\app\node_modules"
 
 [UninstallDelete]
-; Created at run time by the launcher and the Edge app window, not by setup
+; Created at run time by the app and its WebView2 window, not by setup
 Type: filesandordirs; Name: "{localappdata}\{#AppName}"
 Type: dirifempty; Name: "{app}"
 
