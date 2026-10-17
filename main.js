@@ -23,10 +23,52 @@ const REGION_SHORT = {
   'https://www.dtek-dem.com.ua/ua/shutdowns':  { ua: 'Донецьк', en: 'Donetsk' },
 };
 
+// Used until a region's schedule has been loaded; Kyiv city, for one, has groups GPV1.1 ... GPV60.1
 const QUEUES = [
   'GPV1.1','GPV1.2','GPV2.1','GPV2.2','GPV3.1','GPV3.2',
   'GPV4.1','GPV4.2','GPV5.1','GPV5.2','GPV6.1','GPV6.2',
 ];
+
+// region -> groups found in its schedule; at most one entry per region in REGIONS
+const groupsByRegion = {};
+
+function rememberGroups(region, rawFact) {
+  const firstDay = rawFact && Object.values(rawFact)[0];
+  if (!firstDay) return;
+  const groups = Object.keys(firstDay).filter(g => g.startsWith('GPV'));
+  if (groups.length) groupsByRegion[region] = groups.sort((a, b) => parseFloat(a.slice(3)) - parseFloat(b.slice(3)));
+}
+
+function groupOptions(region, selected) {
+  const groups = groupsByRegion[region] || QUEUES;
+  // Keep a saved group selectable even if the list has not been loaded yet
+  const list = selected && !groups.includes(selected) ? [selected, ...groups] : groups;
+  return list.map(q =>
+    `<option value="${q}" ${q === selected ? 'selected' : ''}>${q.replace('GPV', t('queueLabel'))}</option>`
+  ).join('');
+}
+
+// Settings overlay: show the groups of the region picked there, loading them on demand
+async function refreshGroupSelect(region) {
+  const select = document.getElementById('dw-group-select');
+  if (!select) return;
+  const selected = select.value;
+  select.innerHTML = groupOptions(region, selected);
+  if (groupsByRegion[region]) return;
+
+  try {
+    const res  = await fetch(`${API_URL}?region=${encodeURIComponent(region)}`);
+    const data = await res.json();
+    if (data.status === 'success') rememberGroups(region, data.rawFact);
+  } catch { return; }
+
+  // The overlay may have been re-rendered or switched to another region meanwhile
+  const current = document.getElementById('dw-group-select');
+  if (current && groupsByRegion[region] && document.getElementById('dw-region-select').value === region) {
+    const keep = current.value;
+    current.innerHTML = groupOptions(region, groupsByRegion[region].includes(keep) ? keep : groupsByRegion[region][0]);
+  }
+}
 
 const TRANSLATIONS = {
   ua: {
@@ -51,6 +93,7 @@ const TRANSLATIONS = {
     noLight: 'Світла немає',
     hasLight: 'Світло є',
     scheduleFor: 'ГРАФІК НА',
+    updatedAt: 'оновлено',
     notPublished: 'Графік ще не опубліковано',
     botProtection: '☁ Сайт ДТЕК увімкнув захист від ботів — спробуйте пізніше',
     proxyUnavailable: '⚠ Проксі-сервер недоступний — запустіть node server.js',
@@ -77,6 +120,7 @@ const TRANSLATIONS = {
     noLight: 'Power Off',
     hasLight: 'Power On',
     scheduleFor: 'SCHEDULE FOR',
+    updatedAt: 'updated',
     notPublished: 'Schedule not published yet',
     botProtection: '☁ DTEK site bot protection is active — try again later',
     proxyUnavailable: '⚠ Proxy server offline — run node server.js',
@@ -106,6 +150,7 @@ let state = {
   selectedDay: 0,
   currentRawData: null,
   todayKey: null,
+  updatedAt: null, // DTEK's own 'last update' text, e.g. '17.10.2026 16:27'
   loading: false,
 };
 
@@ -216,9 +261,7 @@ function renderShell(root) {
 
       <div class="dw-overlay-title">${t('outageQueue')}</div>
       <select id="dw-group-select" class="dw-form-select">
-        ${QUEUES.map(q =>
-          `<option value="${q}" ${q === state.group ? 'selected' : ''}>${q.replace('GPV', t('queueLabel'))}</option>`
-        ).join('')}
+        ${groupOptions(state.region, state.group)}
       </select>
 
       <button id="dw-save-btn" class="dw-btn-big dw-btn-save">${t('save')}</button>
@@ -305,6 +348,8 @@ function bindEvents() {
     startUpdate();
   });
 
+  document.getElementById('dw-region-select').addEventListener('change', e => refreshGroupSelect(e.target.value));
+
   document.getElementById('dw-chk-aurora').addEventListener('change', e => { state.useAurora = e.target.checked; applyVisuals(); });
   document.getElementById('dw-chk-blur')  .addEventListener('change', e => { state.useBlur   = e.target.checked; applyVisuals(); });
 
@@ -322,8 +367,9 @@ function openSettings() {
   const overlay = document.getElementById('dw-overlay');
   if (!overlay) return;
   overlay.classList.add('visible');
-  document.getElementById('dw-group-select') .value   = state.group  || 'GPV1.1';
   document.getElementById('dw-region-select').value   = state.region;
+  document.getElementById('dw-group-select') .innerHTML = groupOptions(state.region, state.group || 'GPV1.1');
+  refreshGroupSelect(state.region);
   document.getElementById('dw-chk-aurora')  .checked = state.useAurora;
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
   // Nothing to go back to until a group has been saved once
@@ -375,6 +421,8 @@ async function startUpdate() {
     if (data.status === 'success') {
       state.currentRawData = data.rawFact;
       state.todayKey       = data.today != null ? String(data.today) : null;
+      state.updatedAt      = data.update || null;
+      rememberGroups(state.region, data.rawFact);
       updateInterface();
     } else if (data.status === 'protected') {
       setError(t('botProtection'));
@@ -451,7 +499,10 @@ function updateInterface() {
   const dd  = new Date();
   if (state.selectedDay === 1) dd.setDate(now.getDate() + 1);
   const dateEl = document.getElementById('dw-update-date');
-  if (dateEl) dateEl.innerText = `${t('scheduleFor')} ${dd.toLocaleDateString(currentLang === 'ua' ? 'uk-UA' : 'en-US')}`;
+  if (dateEl) {
+    const updated = state.updatedAt ? ` · ${t('updatedAt')} ${state.updatedAt}` : '';
+    dateEl.innerText = `${t('scheduleFor')} ${dd.toLocaleDateString(currentLang === 'ua' ? 'uk-UA' : 'en-US')}${updated}`;
+  }
 
   const outNow = Object.keys(todayGrid).length > 0 ? todayGrid[ch] === '1' : false;
   const statusEl = document.getElementById('dw-status-text');
