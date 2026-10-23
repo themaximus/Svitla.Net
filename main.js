@@ -16,6 +16,16 @@ function postToApp(message) {
   if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(message);
 }
 
+// Messages from the app: "autostart:on" / "autostart:off" (it reads the Windows setting itself)
+if (DESKTOP && window.chrome && window.chrome.webview) {
+  window.chrome.webview.addEventListener('message', e => {
+    if (typeof e.data !== 'string' || !e.data.startsWith('autostart:')) return;
+    state.autostart = e.data === 'autostart:on';
+    const checkbox = document.getElementById('dw-chk-autostart');
+    if (checkbox) checkbox.checked = state.autostart;
+  });
+}
+
 const REGIONS = {
   'https://www.dtek-dnem.com.ua/ua/shutdowns': { ua: 'Дніпро та область', en: 'Dnipro & Region' },
   'https://www.dtek-kem.com.ua/ua/shutdowns':  { ua: 'Київ (місто)', en: 'Kyiv (City)' },
@@ -91,6 +101,8 @@ const TRANSLATIONS = {
     blurToggle: 'Прозорість / розмиття',
     pinPosition: 'Закріпити розташування',
     unpinPosition: 'Відкріпити',
+    autostart: 'Запускати разом з Windows',
+    autostartHint: 'Віджет відкриється після ввімкнення ПК',
     language: 'Мова',
     hideToTray: 'Сховати в трей',
     closeApp: 'Закрити',
@@ -122,6 +134,8 @@ const TRANSLATIONS = {
     blurToggle: 'Transparency / Blur',
     pinPosition: 'Lock position',
     unpinPosition: 'Unlock position',
+    autostart: 'Start with Windows',
+    autostartHint: 'The widget opens when the PC starts',
     language: 'Language',
     hideToTray: 'Hide to tray',
     closeApp: 'Close',
@@ -158,7 +172,14 @@ const SETTINGS_VERSION = 2;
 function saveSettings(patch) {
   const s = Object.assign(loadSettings(), patch, { v: SETTINGS_VERSION });
   localStorage.setItem('dtek-settings', JSON.stringify(s));
+  saveToApp();
   return s;
+}
+
+// WebView2 writes localStorage to disk lazily, so a change made just before the app is closed could
+// be lost. The app keeps its own copy in a file and puts it back into localStorage on every start.
+function saveToApp() {
+  postToApp('settings:' + JSON.stringify({ settings: loadSettings(), lang: localStorage.getItem('app-lang') || 'ua' }));
 }
 
 let state = {
@@ -166,6 +187,7 @@ let state = {
   region:    DEFAULT_REGION,
   useBlur:   false,
   pinned:    false, // desktop app: the widget cannot be dragged
+  autostart: false, // desktop app: start with Windows; the app owns this setting and reports it
   selectedDay: 0,
   currentRawData: null,
   todayKey: null,
@@ -196,6 +218,7 @@ function setLanguage(lang) {
   localStorage.setItem('app-lang', lang);
   document.documentElement.setAttribute('lang', lang);
   postToApp('lang:' + lang);
+  saveToApp();
   window.dispatchEvent(new CustomEvent('lang-changed', { detail: lang }));
 }
 
@@ -219,8 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   scheduleUpdates();
 
-  // Do not poll DTEK while the page is hidden; catch up as soon as it is shown again
+  // Do not poll DTEK while the page is hidden; catch up as soon as it is shown again.
+  // The desktop app keeps polling while hidden: its tray icon still shows the power status.
   document.addEventListener('visibilitychange', () => {
+    if (DESKTOP) return;
     if (document.hidden) {
       clearInterval(updateTimer);
       clearTimeout(hourTimer);
@@ -309,6 +334,18 @@ function renderShell(root) {
         </div>
       </label>
 ${DESKTOP ? `
+      <label class="dw-toggle-row">
+        <div class="dw-toggle-label">
+          ${t('autostart')}
+          <small>${t('autostartHint')}</small>
+        </div>
+        <div class="dw-toggle-switch">
+          <input type="checkbox" id="dw-chk-autostart" ${state.autostart ? 'checked' : ''}>
+          <div class="dw-toggle-track"></div>
+          <div class="dw-toggle-thumb"></div>
+        </div>
+      </label>
+
       <div class="dw-toggle-row">
         <div class="dw-toggle-label">${t('language')}</div>
         <label class="switch lang-switcher">
@@ -371,6 +408,11 @@ function bindEvents() {
     state.region    = region;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
     saveSettings({ group: state.group, region: state.region, useBlur: state.useBlur });
+    const autostart = document.getElementById('dw-chk-autostart');
+    if (autostart && autostart.checked !== state.autostart) {
+      state.autostart = autostart.checked;
+      postToApp('autostart:' + (state.autostart ? 'on' : 'off'));
+    }
     applyVisuals();
     closeSettings();
     startUpdate();
@@ -438,6 +480,8 @@ function openSettings() {
   document.getElementById('dw-group-select') .innerHTML = groupOptions(state.region, state.group || 'GPV1.1');
   refreshGroupSelect(state.region);
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
+  const autostart = document.getElementById('dw-chk-autostart');
+  if (autostart) autostart.checked = state.autostart;
   // Nothing to go back to until a group has been saved once
   document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
 }
@@ -488,6 +532,7 @@ async function startUpdate() {
       state.updatedAt      = data.update || null;
       rememberGroups(state.region, data.rawFact);
       updateInterface();
+      postPowerTimeline();
     } else if (data.status === 'protected') {
       setError(t('botProtection'));
     } else {
@@ -512,9 +557,43 @@ function setRefreshSpinner(on) {
   if (btn) btn.classList.toggle('loading', on);
 }
 
+// Desktop app: the tray shows whether there is power now and when that changes, with a countdown.
+// The app gets the selected group's schedule as half-hour steps and keeps the countdown itself:
+//   "status:<end ms>|<start ms>,<1 = off>;..."  (only the points where the state changes)
+//   "status:0|"  DTEK lists no outages for the group;  "status:"  the schedule could not be loaded
+// Tomorrow counts only once it is published, i.e. has at least one outage in it.
+function postPowerTimeline(failed = false) {
+  if (!DESKTOP) return;
+  if (failed) { postToApp('status:'); return; }
+  const points = [];
+  let end = 0;
+  const raw = state.currentRawData;
+  if (raw && state.group) {
+    const days = Object.keys(raw).sort((a, b) => Number(a) - Number(b));
+    const first = Math.max(0, days.indexOf(state.todayKey));
+    days.slice(first, first + 2).forEach((day, i) => {
+      const hours = raw[day] && raw[day][state.group];
+      if (!hours || end === 0 && i > 0) return;
+      const values = Array.from({ length: 24 }, (_, h) => String(hours[h + 1] || '').toLowerCase());
+      if (i > 0 && !values.some(v => v === 'no' || v.includes('first') || v.includes('second'))) return;
+      const start = Number(day) * 1000;
+      values.forEach((v, h) => {
+        const halves = [v === 'no' || v.includes('first'), v === 'no' || v.includes('second')];
+        halves.forEach((off, half) => {
+          if (points.length && points[points.length - 1][1] === off) return;
+          points.push([start + h * 3_600_000 + half * 1_800_000, off]);
+        });
+      });
+      end = start + 24 * 3_600_000;
+    });
+  }
+  postToApp('status:' + end + '|' + points.map(([time, off]) => time + ',' + (off ? 1 : 0)).join(';'));
+}
+
 function setError(msg) {
   // Do not let a language switch bring back a schedule that failed to refresh
   state.currentRawData = null;
+  postPowerTimeline(true);
   const statusEl = document.getElementById('dw-status-text');
   if (statusEl) statusEl.innerText = t('error');
   const gridRoot = document.getElementById('dw-grid-root');

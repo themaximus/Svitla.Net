@@ -21,6 +21,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Win32;
 
 static class Program
 {
@@ -70,16 +71,16 @@ sealed class WidgetForm : Form
     readonly string appDir = AppDomain.CurrentDomain.BaseDirectory;
     readonly string dataDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Program.AppName);
-    string PositionFile { get { return Path.Combine(dataDir, "window.txt"); } }
+    // "x y hidden": where the widget was, and whether it was left hidden in the tray
+    string WindowStateFile { get { return Path.Combine(dataDir, "window.txt"); } }
 
     readonly EventWaitHandle showEvent;
     readonly RegisteredWaitHandle showWait;
     readonly KillOnCloseJob job = new KillOnCloseJob();
     readonly WebView2 webView = new WebView2();
-    readonly NotifyIcon tray = new NotifyIcon();
-    readonly ToolStripMenuItem trayToggle = new ToolStripMenuItem();
-    readonly ToolStripMenuItem trayExit = new ToolStripMenuItem();
-    bool english;
+    readonly PowerTray tray;
+    bool startHidden, shownOnce;
+    string restoreScriptId;
     StreamWriter log;
     Process server;
     bool closing;
@@ -98,13 +99,13 @@ sealed class WidgetForm : Form
         BackColor = Color.Black;
         StartPosition = FormStartPosition.Manual;
         FitToPage();
-        Location = LoadPosition();
+        LoadWindowState();
 
         webView.Dock = DockStyle.Fill;
         webView.DefaultBackgroundColor = Color.Transparent;
         Controls.Add(webView);
 
-        SetUpTray();
+        tray = new PowerTray(Icon, ToggleWidget, ShowWidget, Close) { WidgetVisible = !startHidden };
 
         this.showEvent = showEvent;
         showWait = ThreadPool.RegisterWaitForSingleObject(showEvent,
@@ -140,28 +141,29 @@ sealed class WidgetForm : Form
 
     // ── Position: remembered between runs, bottom-right corner of the main screen by default ──
 
-    Point LoadPosition()
+    void LoadWindowState()
     {
+        Rectangle area = Screen.PrimaryScreen.WorkingArea;
+        int margin = (int)(16 * dpiScale);
+        Location = new Point(area.Right - Width - margin, Math.Max(area.Top, area.Bottom - Height - margin));
         try
         {
-            string[] xy = File.ReadAllText(PositionFile).Split(' ');
-            var saved = new Rectangle(int.Parse(xy[0]), int.Parse(xy[1]), Width, Height);
+            string[] saved = File.ReadAllText(WindowStateFile).Split(' ');
+            startHidden = saved.Length > 2 && saved[2] == "hidden";
+            var bounds = new Rectangle(int.Parse(saved[0]), int.Parse(saved[1]), Width, Height);
             // Only if most of the widget is still on a connected screen
             foreach (var screen in Screen.AllScreens)
             {
-                var visible = Rectangle.Intersect(screen.WorkingArea, saved);
-                if (visible.Width * visible.Height * 2 > saved.Width * saved.Height) return saved.Location;
+                var visible = Rectangle.Intersect(screen.WorkingArea, bounds);
+                if (visible.Width * visible.Height * 2 > bounds.Width * bounds.Height) Location = bounds.Location;
             }
         }
-        catch (Exception) { } // no or unreadable file: use the default
-        Rectangle area = Screen.PrimaryScreen.WorkingArea;
-        int margin = (int)(16 * dpiScale);
-        return new Point(area.Right - Width - margin, Math.Max(area.Top, area.Bottom - Height - margin));
+        catch (Exception) { } // no or unreadable file: the defaults above
     }
 
-    void SavePosition()
+    void SaveWindowState()
     {
-        try { File.WriteAllText(PositionFile, Left + " " + Top); }
+        try { File.WriteAllText(WindowStateFile, Left + " " + Top + (startHidden ? " hidden" : " shown")); }
         catch (IOException) { }
     }
 
@@ -169,45 +171,89 @@ sealed class WidgetForm : Form
     protected override void OnResizeEnd(EventArgs e)
     {
         base.OnResizeEnd(e);
-        SavePosition();
+        SaveWindowState();
     }
 
-    // ── Tray ──
+    // ── Shown or hidden in the tray: remembered, the next start (also at sign-in) keeps it ──
 
-    void SetUpTray()
+    // The window is created visible (WebView2 needs that) and hidden again right away
+    protected override void OnShown(EventArgs e)
     {
-        trayToggle.Click += (s, e) => { if (Visible) Hide(); else ShowWidget(); };
-        trayExit.Click += (s, e) => Close();
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(trayToggle);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(trayExit);
-
-        tray.Icon = Icon;
-        tray.Text = Program.AppName;
-        tray.ContextMenuStrip = menu;
-        tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) { if (Visible) Hide(); else ShowWidget(); } };
-        tray.Visible = true;
-        UpdateTrayText();
-    }
-
-    void UpdateTrayText()
-    {
-        trayToggle.Text = Visible ? (english ? "Hide widget" : "Сховати віджет")
-                                  : (english ? "Show widget" : "Показати віджет");
-        trayExit.Text = english ? "Exit" : "Вийти";
+        base.OnShown(e);
+        shownOnce = true;
+        if (startHidden) Hide();
     }
 
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
-        UpdateTrayText();
+        if (tray != null) tray.WidgetVisible = Visible;
+        if (shownOnce && !closing && startHidden == Visible)
+        {
+            startHidden = !Visible;
+            SaveWindowState();
+        }
     }
 
     void ShowWidget()
     {
         Show();
         Activate();
+    }
+
+    void ToggleWidget()
+    {
+        if (Visible) Hide(); else ShowWidget();
+    }
+
+    // ── Start with Windows: our own value under the per-user Run key (the uninstaller removes it) ──
+
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    static bool Autostart
+    {
+        get
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(RunKey))
+                return key != null && key.GetValue(Program.AppName) != null;
+        }
+        set
+        {
+            using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
+            {
+                if (value) key.SetValue(Program.AppName, "\"" + Application.ExecutablePath + "\"");
+                else key.DeleteValue(Program.AppName, false);
+            }
+        }
+    }
+
+    // ── Settings: a file copy of the page's localStorage settings, written at once ──
+
+    string SettingsFile { get { return Path.Combine(dataDir, "settings.json"); } }
+
+    void SaveSettings(string json)
+    {
+        try
+        {
+            string temp = SettingsFile + ".tmp";
+            File.WriteAllText(temp, json);
+            if (File.Exists(SettingsFile)) File.Replace(temp, SettingsFile, null);
+            else File.Move(temp, SettingsFile);
+        }
+        catch (IOException ex) { Log("[app] settings not saved: " + ex.Message); }
+    }
+
+    // Runs before the page's own scripts on every load, so the page reads the saved settings
+    string RestoreSettingsScript()
+    {
+        string json;
+        try { json = File.ReadAllText(SettingsFile).Trim(); }
+        catch (IOException) { return null; }
+        if (!json.StartsWith("{") || !json.EndsWith("}")) return null;
+        return "(function (saved) { try {" +
+               " if (saved.settings) localStorage.setItem('dtek-settings', JSON.stringify(saved.settings));" +
+               " if (saved.lang) localStorage.setItem('app-lang', saved.lang);" +
+               " } catch (e) {} })(" + json + ");";
     }
 
     // ── Messages from the page (main.js, postToApp) ──
@@ -222,11 +268,10 @@ sealed class WidgetForm : Form
         }
         else if (message == "hide") Hide();
         else if (message == "close") Close();
-        else if (message.StartsWith("lang:"))
-        {
-            english = message == "lang:en";
-            UpdateTrayText();
-        }
+        else if (message.StartsWith("lang:")) tray.English = message == "lang:en";
+        else if (message.StartsWith("settings:")) SaveSettings(message.Substring("settings:".Length));
+        else if (message.StartsWith("autostart:")) Autostart = message == "autostart:on";
+        else if (message.StartsWith("status:")) tray.SetTimeline(message.Substring("status:".Length));
     }
 
     protected override async void OnLoad(EventArgs e)
@@ -249,6 +294,9 @@ sealed class WidgetForm : Form
         }
         ConfigureBrowser(webView.CoreWebView2);
         ZoomToFit();
+        // Only for the first load: by a later reload the file may be newer than this script
+        string restore = RestoreSettingsScript();
+        if (restore != null) restoreScriptId = await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(restore);
 
         if (!StartServer()) return;
         if (!await Task.Run(() => WaitForServer()))
@@ -288,7 +336,16 @@ sealed class WidgetForm : Form
             OnPageMessage(message);
         };
         core.NavigationCompleted += (s, e) =>
+        {
             Log("[app] page loaded: " + (e.IsSuccess ? "ok" : e.WebErrorStatus.ToString()));
+            if (restoreScriptId != null)
+            {
+                core.RemoveScriptToExecuteOnDocumentCreated(restoreScriptId);
+                restoreScriptId = null;
+            }
+            // The Run key is the truth: setup's "start with Windows" task writes it too
+            core.PostWebMessageAsString("autostart:" + (Autostart ? "on" : "off"));
+        };
     }
 
     static void OpenExternal(string uri)
@@ -371,11 +428,16 @@ sealed class WidgetForm : Form
         Close();
     }
 
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        closing = true; // hiding the window while it closes is not "left in the tray"
+        base.OnFormClosing(e);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         closing = true;
-        SavePosition();
-        tray.Visible = false;
+        SaveWindowState();
         tray.Dispose();
         showWait.Unregister(null);
         webView.Dispose(); // shuts the WebView2 browser processes down before the app exits
