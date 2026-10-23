@@ -11,6 +11,7 @@
 // Built by desktop\build.ps1 with the C# compiler that ships with .NET Framework 4.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -381,17 +382,42 @@ sealed class WidgetForm : Form
         server = new Process { StartInfo = psi, EnableRaisingEvents = true };
         server.OutputDataReceived += (s, e) => Log(e.Data);
         server.ErrorDataReceived += (s, e) => Log(e.Data);
-        server.Exited += (s, e) =>
-        {
-            if (!closing) BeginInvoke(new Action(() => Fail("The widget server stopped unexpectedly. See " +
-                                                            Path.Combine(dataDir, "server.log"))));
-        };
+        server.Exited += (s, e) => { if (!closing) BeginInvoke(new Action(() => OnServerExited((Process)s))); };
 
         server.Start();
         job.Add(server);
         server.BeginOutputReadLine();
         server.BeginErrorReadLine();
         return true;
+    }
+
+    // The server stopping (killed, crashed) does not end the widget: it is started again, unless it
+    // keeps failing - more than MaxServerRestarts times within ServerRestartWindow
+    const int MaxServerRestarts = 3;
+    static readonly TimeSpan ServerRestartWindow = TimeSpan.FromMinutes(10);
+    readonly Queue<DateTime> serverRestarts = new Queue<DateTime>();
+
+    async void OnServerExited(Process exited)
+    {
+        if (closing || exited != server) return;
+        Log("[app] server stopped, exit code " + exited.ExitCode);
+        while (serverRestarts.Count > 0 && DateTime.Now - serverRestarts.Peek() > ServerRestartWindow) serverRestarts.Dequeue();
+        if (serverRestarts.Count >= MaxServerRestarts)
+        {
+            Fail("The widget server keeps stopping. See " + Path.Combine(dataDir, "server.log"));
+            return;
+        }
+        serverRestarts.Enqueue(DateTime.Now);
+        exited.WaitForExit(); // drains its redirected output into the log
+        exited.Dispose();
+
+        await Task.Delay(1000);
+        if (closing || !StartServer()) return;
+        if (await Task.Run(() => WaitForServer()))
+        {
+            Log("[app] server restarted");
+            webView.CoreWebView2.PostWebMessageAsString("refresh"); // the page reloads the schedule at once
+        }
     }
 
     bool WaitForServer()

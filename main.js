@@ -16,9 +16,11 @@ function postToApp(message) {
   if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(message);
 }
 
-// Messages from the app: "autostart:on" / "autostart:off" (it reads the Windows setting itself)
+// Messages from the app: "autostart:on" / "autostart:off" (it reads the Windows setting itself),
+// "refresh" after it had to restart the server
 if (DESKTOP && window.chrome && window.chrome.webview) {
   window.chrome.webview.addEventListener('message', e => {
+    if (e.data === 'refresh') { startUpdate(); return; }
     if (typeof e.data !== 'string' || !e.data.startsWith('autostart:')) return;
     state.autostart = e.data === 'autostart:on';
     const checkbox = document.getElementById('dw-chk-autostart');
