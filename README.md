@@ -7,7 +7,7 @@ Standalone web port of the DTEK outage schedule widget.
 - Bypasses CORS limitations using a local Express proxy.
 - Multilingual support (Ukrainian & English).
 - Persisted configuration (region, group, and visual appearance).
-- Custom animated background (Aurora effect) & transparency/blur toggles.
+- Transparency toggle.
 
 ## Quick Start
 
@@ -39,7 +39,7 @@ powershell -ExecutionPolicy Bypass -File desktop\build.ps1
 The installed app (`%LOCALAPPDATA%\Programs\DTEK Widget`, no admin rights needed) runs the server
 on `127.0.0.1:47381` without a console and shows the widget on the desktop as a frameless,
 transparent window through WebView2, the browser engine built into Windows. Drag the widget to move
-it; its settings can switch off transparency and the background animation and lock its position.
+it; its settings can switch off transparency; the pin in its top bar locks its position.
 The `–` button hides it to the tray, `✕` closes the app; the tray icon shows, hides or exits it.
 Browser data, the window position and the server log live in `%LOCALAPPDATA%\DTEK Widget`.
 Setup offers a desktop shortcut and, optionally, start with Windows.

@@ -87,7 +87,6 @@ const TRANSLATIONS = {
     save: 'ЗБЕРЕГТИ',
     cancel: 'СКАСУВАТИ',
     appearance: 'Вигляд',
-    bgAnimation: 'Анімація фону',
     performanceImpact: 'Підвищить навантаження на систему',
     blurToggle: 'Прозорість / розмиття',
     pinPosition: 'Закріпити розташування',
@@ -119,7 +118,6 @@ const TRANSLATIONS = {
     save: 'SAVE',
     cancel: 'CANCEL',
     appearance: 'Appearance',
-    bgAnimation: 'Background Animation',
     performanceImpact: 'Increases system load',
     blurToggle: 'Transparency / Blur',
     pinPosition: 'Lock position',
@@ -166,7 +164,6 @@ function saveSettings(patch) {
 let state = {
   group:     null,
   region:    DEFAULT_REGION,
-  useAurora: false,
   useBlur:   false,
   pinned:    false, // desktop app: the widget cannot be dragged
   selectedDay: 0,
@@ -257,11 +254,10 @@ function restoreSavedSettings() {
   const saved = loadSettings();
   state.group     = saved.group  || null;
   state.region    = saved.region || DEFAULT_REGION;
-  // The desktop widget starts transparent and animated; both can be switched off in the settings.
-  // Settings saved before version 2 stored the old "off" defaults rather than a choice, so they are ignored.
+  // The desktop widget starts transparent; it can be switched off in the settings.
+  // Settings saved before version 2 stored the old "off" default rather than a choice, so it is ignored.
   const appearanceSaved = saved.v >= SETTINGS_VERSION;
-  state.useAurora = appearanceSaved ? saved.useAurora : DESKTOP;
-  state.useBlur   = appearanceSaved ? saved.useBlur   : DESKTOP;
+  state.useBlur   = appearanceSaved ? saved.useBlur : DESKTOP;
   state.pinned    = saved.pinned    || false;
 }
 
@@ -300,18 +296,6 @@ function renderShell(root) {
       <hr class="dw-divider">
 
       <div class="dw-overlay-title">${t('appearance')}</div>
-
-      <label class="dw-toggle-row">
-        <div class="dw-toggle-label">
-          ${t('bgAnimation')}
-          <small>${t('performanceImpact')}</small>
-        </div>
-        <div class="dw-toggle-switch">
-          <input type="checkbox" id="dw-chk-aurora" ${state.useAurora ? 'checked' : ''}>
-          <div class="dw-toggle-track"></div>
-          <div class="dw-toggle-thumb"></div>
-        </div>
-      </label>
 
       <label class="dw-toggle-row">
         <div class="dw-toggle-label">
@@ -385,9 +369,8 @@ function bindEvents() {
     if (region !== state.region) state.currentRawData = null; // never show one region's data under another's name
     state.group     = document.getElementById('dw-group-select').value;
     state.region    = region;
-    state.useAurora = document.getElementById('dw-chk-aurora').checked;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
-    saveSettings({ group: state.group, region: state.region, useAurora: state.useAurora, useBlur: state.useBlur });
+    saveSettings({ group: state.group, region: state.region, useBlur: state.useBlur });
     applyVisuals();
     closeSettings();
     startUpdate();
@@ -397,7 +380,6 @@ function bindEvents() {
 
   if (DESKTOP) bindDesktopEvents();
 
-  document.getElementById('dw-chk-aurora').addEventListener('change', e => { state.useAurora = e.target.checked; applyVisuals(); });
   document.getElementById('dw-chk-blur')  .addEventListener('change', e => { state.useBlur   = e.target.checked; applyVisuals(); });
 
   document.querySelectorAll('.dw-day-btn').forEach(btn => {
@@ -455,7 +437,6 @@ function openSettings() {
   document.getElementById('dw-region-select').value   = state.region;
   document.getElementById('dw-group-select') .innerHTML = groupOptions(state.region, state.group || 'GPV1.1');
   refreshGroupSelect(state.region);
-  document.getElementById('dw-chk-aurora')  .checked = state.useAurora;
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
   // Nothing to go back to until a group has been saved once
   document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
@@ -476,8 +457,6 @@ function cancelSettings() {
 function applyVisuals() {
   const c = document.getElementById('dw-container');
   if (!c) return;
-  c.classList.toggle('aurora-on',  state.useAurora);
-  c.classList.toggle('aurora-off', !state.useAurora);
   c.classList.toggle('blur-on',    state.useBlur);
   c.classList.toggle('blur-off',   !state.useBlur);
 }

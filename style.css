@@ -71,14 +71,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 3px; /* the thumb's inset, so each label is centred over one thumb position */
   font-family: 'Fira Code', monospace;
   font-size: 0.75rem;
   font-weight: 700;
   color: rgba(255,255,255,0.3);
 }
 
+/* Same width as the thumb (32px), so the label is centred on it */
 .toggle .left, .toggle .right {
+  width: 32px;
+  text-align: center;
   z-index: 1;
   transition: color 0.3s;
 }
@@ -144,45 +147,14 @@ body {
   user-select: none;
 }
 
-.dw-container::before {
-  content: '';
-  position: absolute;
-  inset: -35%;
-  pointer-events: none;
-  opacity: 0;
-  background:
-    radial-gradient(120% 120% at 20% 25%, rgba(10,255,170,0.3) 0%, rgba(10,255,170,0) 57%),
-    radial-gradient(120% 110% at 80% 20%, rgba(50,130,255,0.28) 0%, rgba(50,130,255,0) 60%),
-    radial-gradient(130% 120% at 50% 85%, rgba(195,85,255,0.22) 0%, rgba(195,85,255,0) 64%);
-  transform: translate3d(0,0,0) scale(1.1);
-  transition: opacity 260ms ease;
-}
-
 .dw-container > * { position: relative; z-index: 1; }
-
-.dw-container.aurora-on {
-  background: linear-gradient(140deg, rgba(8,20,30,0.96), rgba(10,34,30,0.92), rgba(30,15,42,0.95));
-}
-.dw-container.aurora-on::before {
-  opacity: 0.78;
-  animation: aurora-drift 16s linear infinite;
-}
 
 .dw-container.blur-on {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   background: rgba(13,31,24,0.8);
 }
-.dw-container.aurora-on.blur-on {
-  background: linear-gradient(140deg, rgba(8,20,30,0.78), rgba(10,34,30,0.72), rgba(30,15,42,0.76));
-}
-.dw-container.aurora-off.blur-off { background: #0d1f18; }
-
-@keyframes aurora-drift {
-  0% { transform: rotate(0deg) scale(1.1); }
-  50% { transform: rotate(180deg) scale(1.2) translate(10px, -10px); }
-  100% { transform: rotate(360deg) scale(1.1); }
-}
+.dw-container.blur-off { background: #0d1f18; }
 
 /* Settings overlay */
 .dw-overlay {
@@ -547,9 +519,6 @@ html.desktop .dw-container.blur-on {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: rgba(13,31,24,0.72);
-}
-html.desktop .dw-container.aurora-on.blur-on {
-  background: linear-gradient(140deg, rgba(8,20,30,0.72), rgba(10,34,30,0.64), rgba(30,15,42,0.7));
 }
 
 .dw-window-actions {
