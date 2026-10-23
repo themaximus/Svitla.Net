@@ -68,7 +68,7 @@ Copy-Item $wvCore, $wvForms, "$sdk\runtimes\win-x64\native\WebView2Loader.dll" $
 Write-Host '== launcher'
 & $csc /nologo /target:winexe /optimize+ /platform:x64 "/win32icon:$build\app.ico" `
   "/out:$stage\DTEK Widget.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wvCore" "/r:$wvForms" `
-  (Join-Path $PSScriptRoot 'Launcher.cs') (Join-Path $PSScriptRoot 'PowerTray.cs')
+  (Join-Path $PSScriptRoot 'Launcher.cs') (Join-Path $PSScriptRoot 'PowerTray.cs') (Join-Path $PSScriptRoot 'AddressLookup.cs')
 if ($LASTEXITCODE) { throw 'launcher build failed' }
 
 Write-Host '== installer'

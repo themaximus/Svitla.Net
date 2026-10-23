@@ -40,7 +40,9 @@ The installed app (`%LOCALAPPDATA%\Programs\DTEK Widget`, no admin rights needed
 on `127.0.0.1:47381` without a console and shows the widget on the desktop as a frameless,
 transparent window through WebView2, the browser engine built into Windows. Drag the widget to move
 it; its settings can switch off transparency; the pin in its top bar locks its position.
-The `–` button hides it to the tray, `✕` closes the app; the tray icon shows, hides or exits it.
+Its settings can also find the outage group by address: the button opens the region's DTEK page,
+the address is looked up in the site's own form and the group from the site's answer is filled in
+(Kyiv city does not show group numbers anywhere else). The `–` button hides it to the tray, `✕` closes the app; the tray icon shows, hides or exits it.
 Browser data, the window position and the server log live in `%LOCALAPPDATA%\DTEK Widget`.
 Setup offers a desktop shortcut and, optionally, start with Windows.
 The uninstaller removes the install folder, the data folder, shortcuts and the autostart entry.

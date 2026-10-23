@@ -82,6 +82,9 @@ sealed class WidgetForm : Form
     readonly PowerTray tray;
     bool startHidden, shownOnce;
     string restoreScriptId;
+    bool english;
+    CoreWebView2Environment browserEnvironment; // shared with the address lookup window
+    AddressLookupForm addressLookup;
     StreamWriter log;
     Process server;
     bool closing;
@@ -257,6 +260,22 @@ sealed class WidgetForm : Form
                " } catch (e) {} })(" + json + ");";
     }
 
+    // ── Group lookup by address on the DTEK site (AddressLookup.cs) ──
+
+    void OpenAddressLookup(string regionUrl)
+    {
+        if (!AddressLookupForm.IsDtekPage(regionUrl) || browserEnvironment == null) return;
+        if (addressLookup != null && !addressLookup.IsDisposed) { addressLookup.Activate(); return; }
+
+        addressLookup = new AddressLookupForm(browserEnvironment, regionUrl, Icon, dpiScale, english, found =>
+        {
+            webView.CoreWebView2.PostWebMessageAsString("groupFound:" + found);
+            ShowWidget();
+        });
+        addressLookup.FormClosed += (s, e) => addressLookup = null;
+        addressLookup.Show();
+    }
+
     // ── Messages from the page (main.js, postToApp) ──
 
     void OnPageMessage(string message)
@@ -269,7 +288,8 @@ sealed class WidgetForm : Form
         }
         else if (message == "hide") Hide();
         else if (message == "close") Close();
-        else if (message.StartsWith("lang:")) tray.English = message == "lang:en";
+        else if (message.StartsWith("lang:")) tray.English = english = message == "lang:en";
+        else if (message.StartsWith("findGroup:")) OpenAddressLookup(message.Substring("findGroup:".Length));
         else if (message.StartsWith("settings:")) SaveSettings(message.Substring("settings:".Length));
         else if (message.StartsWith("autostart:")) Autostart = message == "autostart:on";
         else if (message.StartsWith("status:")) tray.SetTimeline(message.Substring("status:".Length));
@@ -284,8 +304,8 @@ sealed class WidgetForm : Form
 
         try
         {
-            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataDir, "WebView2"));
-            await webView.EnsureCoreWebView2Async(environment);
+            browserEnvironment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataDir, "WebView2"));
+            await webView.EnsureCoreWebView2Async(browserEnvironment);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -464,6 +484,7 @@ sealed class WidgetForm : Form
     {
         closing = true;
         SaveWindowState();
+        if (addressLookup != null) addressLookup.Close();
         tray.Dispose();
         showWait.Unregister(null);
         webView.Dispose(); // shuts the WebView2 browser processes down before the app exits

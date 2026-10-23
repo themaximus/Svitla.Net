@@ -21,6 +21,7 @@ function postToApp(message) {
 if (DESKTOP && window.chrome && window.chrome.webview) {
   window.chrome.webview.addEventListener('message', e => {
     if (e.data === 'refresh') { startUpdate(); return; }
+    if (typeof e.data === 'string' && e.data.startsWith('groupFound:')) { applyFoundGroup(e.data.slice('groupFound:'.length)); return; }
     if (typeof e.data !== 'string' || !e.data.startsWith('autostart:')) return;
     state.autostart = e.data === 'autostart:on';
     const checkbox = document.getElementById('dw-chk-autostart');
@@ -98,6 +99,9 @@ const TRANSLATIONS = {
   ua: {
     regionCity: 'Регіон / Місто',
     outageQueue: 'Черга відключень',
+    findByAddress: '🔍 Знайти чергу за адресою',
+    foundByAddress: 'Знайдено за адресою',
+    alsoGroups: 'також',
     queueLabel: 'Черга ',
     save: 'ЗБЕРЕГТИ',
     cancel: 'СКАСУВАТИ',
@@ -131,6 +135,9 @@ const TRANSLATIONS = {
   en: {
     regionCity: 'Region / City',
     outageQueue: 'Outage Group',
+    findByAddress: '🔍 Find group by address',
+    foundByAddress: 'Found for',
+    alsoGroups: 'also',
     queueLabel: 'Group ',
     save: 'SAVE',
     cancel: 'CANCEL',
@@ -319,6 +326,9 @@ function renderShell(root) {
       <select id="dw-group-select" class="dw-form-select">
         ${groupOptions(state.region, state.group)}
       </select>
+${DESKTOP ? `
+      <button id="dw-lookup-btn" class="dw-btn-lookup">${t('findByAddress')}</button>
+      <div id="dw-lookup-note" class="dw-lookup-note"></div>` : ''}
 
       <button id="dw-save-btn" class="dw-btn-big dw-btn-save">${t('save')}</button>
       <button id="dw-cancel-btn" class="dw-btn-big dw-btn-cancel" style="display:none">${t('cancel')}</button>
@@ -458,8 +468,35 @@ function renderPinButton() {
   btn.title = t(state.pinned ? 'unpinPosition' : 'pinPosition');
 }
 
+// The app opens the selected region's DTEK page; the user looks the address up there
+// and the app sends back {street, house, groups}
+let lookupRegion = null;
+
+function applyFoundGroup(json) {
+  let found;
+  try { found = JSON.parse(json); } catch { return; }
+  if (!found || !Array.isArray(found.groups) || !found.groups.length) return;
+  if (!document.getElementById('dw-overlay').classList.contains('visible')) openSettings();
+  const region = lookupRegion || state.region;
+  document.getElementById('dw-region-select').value = region;
+  const group = found.groups[0];
+  const select = document.getElementById('dw-group-select');
+  select.innerHTML = groupOptions(region, group);
+  if (select.value !== group) select.insertAdjacentHTML('afterbegin', `<option value="${group}" selected>${group.replace('GPV', t('queueLabel'))}</option>`);
+  select.value = group;
+
+  const note = document.getElementById('dw-lookup-note');
+  const others = found.groups.slice(1).map(g => g.replace('GPV', '')).join(', ');
+  note.textContent = `${t('foundByAddress')}: ${found.street || ''} ${found.house || ''} → ${group.replace('GPV', t('queueLabel'))}` +
+    (others ? ` (${t('alsoGroups')} ${others})` : '');
+}
+
 function bindDesktopEvents() {
   renderPinButton();
+  document.getElementById('dw-lookup-btn').addEventListener('click', () => {
+    lookupRegion = document.getElementById('dw-region-select').value;
+    postToApp('findGroup:' + lookupRegion);
+  });
   document.getElementById('dw-pin-btn').addEventListener('click', () => {
     state.pinned = !state.pinned;
     saveSettings({ pinned: state.pinned });
