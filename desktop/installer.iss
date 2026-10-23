@@ -110,5 +110,9 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
+  begin
+    { The widget's own "start with Windows" setting writes this value too, not only setup's task }
+    RegDeleteValue(HKEY_CURRENT_USER, ShellKey + '\Run', '{#AppName}');
     RemoveShellTraces;
+  end;
 end;
