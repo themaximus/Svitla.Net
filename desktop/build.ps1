@@ -34,7 +34,7 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force "$stage\app", "$stage\node" | Out-Null
 
 Write-Host '== app files and production dependencies'
-foreach ($f in 'index.html', 'main.js', 'style.css', 'server.js', 'package.json', 'package-lock.json') {
+foreach ($f in 'index.html', 'main.js', 'style.css', 'server.js', 'schedules.js', 'package.json', 'package-lock.json') {
   Copy-Item (Join-Path $root $f) "$stage\app"
 }
 Push-Location "$stage\app"
