@@ -149,8 +149,7 @@ const TRANSLATIONS = {
     scheduleFor: 'ГРАФІК НА',
     updatedAt: 'оновлено',
     notPublished: 'Графік ще не опубліковано',
-    notPublishedToday: 'Графіка на сьогодні немає',
-    noScheduleToday: 'Немає графіка',
+    notPublishedToday: 'Графік на сьогодні ще не опубліковано',
     addressNoPower: 'За адресою зараз немає світла',
     plannedRepairs: 'Планові ремонтні роботи',
     since: 'з',
@@ -199,8 +198,7 @@ const TRANSLATIONS = {
     scheduleFor: 'SCHEDULE FOR',
     updatedAt: 'updated',
     notPublished: 'Schedule not published yet',
-    notPublishedToday: 'No schedule for today',
-    noScheduleToday: 'No schedule',
+    notPublishedToday: 'Today\'s schedule is not published yet',
     addressNoPower: 'No power at the address now',
     plannedRepairs: 'Planned repair works',
     since: 'since',
@@ -933,24 +931,22 @@ function shortDtekTime(text, ms) {
     : `${time} ${String(at.getDate()).padStart(2, '0')}.${String(at.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Shown only while DTEK reports no power at the saved address; otherwise the widget looks as usual
 function renderAddressBox() {
   const box = document.getElementById('dw-address-box');
   if (!box) return;
   const outage = currentAddressOutage();
   const address = state.address && state.address.region === state.region ? state.address : null;
-  box.hidden = !address;
-  // The address lines take room from the schedule: its rows get tighter to keep all 24 hours in view
-  document.getElementById('dw-container').classList.toggle('compact', !!address);
-  if (!address) return;
-  box.classList.toggle('outage', !!outage);
-  const lines = [`📍 ${addressText(address)}`];
-  if (outage) {
-    lines.push(t('addressNoPower'));
-    if (outage.reason) lines.push(outage.reason);
-    const from = outage.start ? `${t('since')} ${shortDtekTime(outage.start, outage.startMs)}` : '';
-    const until = outage.end ? `${t('approxUntil')} ${shortDtekTime(outage.end, outage.endMs)}` : '';
-    if (from || until) lines.push([from, until].filter(Boolean).join(' · '));
-  }
+  box.hidden = !(address && outage);
+  // The box takes room from the schedule: its rows get tighter to keep all 24 hours in view
+  document.getElementById('dw-container').classList.toggle('compact', !box.hidden);
+  if (box.hidden) return;
+  box.classList.add('outage');
+  const lines = [`📍 ${addressText(address)}`, t('addressNoPower')];
+  if (outage.reason) lines.push(outage.reason);
+  const from = outage.start ? `${t('since')} ${shortDtekTime(outage.start, outage.startMs)}` : '';
+  const until = outage.end ? `${t('approxUntil')} ${shortDtekTime(outage.end, outage.endMs)}` : '';
+  if (from || until) lines.push([from, until].filter(Boolean).join(' · '));
   box.replaceChildren(...lines.map((text, i) => Object.assign(document.createElement('div'), {
     textContent: text, className: i === 1 ? 'dw-address-alert' : '',
   })));
@@ -1015,8 +1011,8 @@ function updateInterface() {
   const noScheduleToday = !todayRaw;
   const outNow = currentAddressOutage() ? true : todayGrid[ch] === '1';
   const statusEl = document.getElementById('dw-status-text');
-  if (statusEl) statusEl.innerText = outNow ? t('noLight') : noScheduleToday ? t('noScheduleToday') : t('hasLight');
-  const accent = outNow ? '#ff4444' : noScheduleToday ? '#8a919c' : '#00ff88';
+  if (statusEl) statusEl.innerText = outNow ? t('noLight') : t('hasLight');
+  const accent = outNow ? '#ff4444' : '#00ff88';
   renderAddressBox();
   const dot = document.getElementById('dw-dot');
   if (dot) {

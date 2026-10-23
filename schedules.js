@@ -1,5 +1,5 @@
 /**
- * schedules.js — outage schedules of every region the widget supports, from several sources.
+ * schedules.js — outage schedules of the DTEK regions, from DTEK's own sources.
  *
  * Every source is turned into the format of the DTEK page's DisconSchedule.fact, which the widget renders:
  *   { data: { <unix s of Kyiv midnight>: { 'GPV1.1': { 1..24: 'yes' | 'no' | 'first' | 'second' | 'maybe' } } },
@@ -7,70 +7,49 @@
  * 'first' / 'second': no power in the first / second half of the hour; 'maybe': an outage is possible.
  * Only today and tomorrow (Kyiv time) are kept: a source that stopped updating must not show an old day as today.
  *
- * Each region lists its sources in order; the first one that answers wins.
+ * Each region lists its sources in order; the first one with today's schedule wins.
  *   dtekPage  - the DTEK region's own page (often behind its bot protection for a server)
- *   yasno     - YASNO's public API (DTEK group, Kyiv and Dnipro incl. ЦЕК)
- *   factFile  - a public mirror file in the outage-data-ua format:
- *               Baskerville42/outage-data-ua (DTEK regions), yaroslav2901/OE_OUTAGE_DATA (oblenergos)
- *   mykolaiv  - Mykolaivoblenergo's public API
- * Regions whose operator publishes schedules only as pictures, in Telegram or not at all
- * (Vinnytsia, Volyn, Sumy, Kirovohrad, Chernivtsi, Kherson, Luhansk) are not listed.
+ *   yasno     - YASNO's public API (DTEK's supplier for Kyiv and Dnipro, incl. ЦЕК)
+ *   factFile  - Baskerville42/outage-data-ua: a copy of the same DisconSchedule.fact from the DTEK pages,
+ *               used when DTEK does not let the server read its page
  */
 
 const DTEK = id => `https://www.dtek-${id}.com.ua/ua/shutdowns`;
 const OUTAGE_DATA_UA = 'https://raw.githubusercontent.com/Baskerville42/outage-data-ua/main/data/';
-const OE_OUTAGE_DATA = 'https://raw.githubusercontent.com/yaroslav2901/OE_OUTAGE_DATA/main/data/';
 const YASNO = (region, dso) =>
   `https://app.yasno.ua/api/blackout-service/public/shutdowns/regions/${region}/dsos/${dso}/planned-outages`;
-const MYKOLAIV_API = 'https://off.energy.mk.ua/api';
 
-// The DTEK Dnipro page and its mirror also carry ЦЕК's groups, as GPV1001.1 ... GPV1006.2
+// The DTEK Dnipro page and its copy also carry ЦЕК's groups, as GPV1001.1 ... GPV1006.2
 const CEK_GROUP = /^GPV100(\d+\.\d+)$/;
 const dniproOnly = group => (CEK_GROUP.test(group) ? null : group);
 const cekOnly = group => { const m = group.match(CEK_GROUP); return m ? 'GPV' + m[1] : null; };
 
-/** lookup: the DTEK page whose address form finds the group of an address (desktop app only). */
+/** In the widget's order. lookup: the DTEK page whose address form finds the group of an address. */
 const REGIONS = [
+  region('dnem', 'Дніпро та область', 'Dnipro & Region', 'Дніпро', 'Dnipro', {
+    lookup: DTEK('dnem'),
+    sources: [dtekPage(DTEK('dnem'), dniproOnly), yasno(3, 301), factFile(OUTAGE_DATA_UA + 'dnipro.json', dniproOnly)],
+  }),
+  region('cek', 'Дніпро та область (ЦЕК)', 'Dnipro & Region (CEC)', 'ЦЕК', 'CEC', {
+    lookup: DTEK('dnem'),
+    sources: [yasno(3, 303), dtekPage(DTEK('dnem'), cekOnly), factFile(OUTAGE_DATA_UA + 'dnipro.json', cekOnly)],
+  }),
   region('kem', 'Київ (місто)', 'Kyiv (City)', 'Київ', 'Kyiv', {
     lookup: DTEK('kem'),
     sources: [dtekPage(DTEK('kem')), yasno(25, 902), factFile(OUTAGE_DATA_UA + 'kyiv.json')],
   }),
-  region('krem', 'Київська обл.', 'Kyiv Oblast', 'Київ обл.', 'Kyiv Obl.', {
+  region('krem', 'Київська обл.', 'Kyiv Region', 'Київ обл.', 'Kyiv Reg.', {
     lookup: DTEK('krem'),
     sources: [dtekPage(DTEK('krem')), factFile(OUTAGE_DATA_UA + 'kyiv-region.json')],
   }),
-  region('dnem', 'Дніпропетровська обл. (ДТЕК)', 'Dnipropetrovsk Obl. (DTEK)', 'Дніпро', 'Dnipro', {
-    lookup: DTEK('dnem'),
-    sources: [dtekPage(DTEK('dnem'), dniproOnly), yasno(3, 301), factFile(OUTAGE_DATA_UA + 'dnipro.json', dniproOnly)],
-  }),
-  region('cek', 'Дніпропетровська обл. (ЦЕК)', 'Dnipropetrovsk Obl. (CEC)', 'ЦЕК', 'CEC', {
-    lookup: DTEK('dnem'),
-    sources: [yasno(3, 303), dtekPage(DTEK('dnem'), cekOnly), factFile(OUTAGE_DATA_UA + 'dnipro.json', cekOnly)],
-  }),
-  region('oem', 'Одеська обл.', 'Odesa Oblast', 'Одеса', 'Odesa', {
+  region('oem', 'Одеська обл.', 'Odesa Region', 'Одеса', 'Odesa', {
     lookup: DTEK('oem'),
     sources: [dtekPage(DTEK('oem')), factFile(OUTAGE_DATA_UA + 'odesa.json')],
   }),
-  region('dem', 'Донецька обл.', 'Donetsk Oblast', 'Донецьк', 'Donetsk', {
+  region('dem', 'Донецька обл.', 'Donetsk Region', 'Донецьк', 'Donetsk', {
     lookup: DTEK('dem'),
     sources: [dtekPage(DTEK('dem'))],
   }),
-  region('mykolaiv', 'Миколаївська обл.', 'Mykolaiv Oblast', 'Миколаїв', 'Mykolaiv', { sources: [mykolaiv()] }),
-  ...[
-    ['zhytomyr', 'Житомирська обл.', 'Zhytomyr Oblast', 'Житомир', 'Zhytomyr', 'Zhytomyroblenergo'],
-    ['zakarpattia', 'Закарпатська обл.', 'Zakarpattia Oblast', 'Ужгород', 'Uzhhorod', 'Zakarpattiaoblenerho'],
-    ['zaporizhzhia', 'Запорізька обл.', 'Zaporizhzhia Oblast', 'Запоріжжя', 'Zaporizhzhia', 'Zaporizhzhiaoblenergo'],
-    ['ivano-frankivsk', 'Івано-Франківська обл.', 'Ivano-Frankivsk Oblast', 'Франківськ', 'Ivano-Frankivsk', 'Prykarpattiaoblenerho'],
-    ['lviv', 'Львівська обл.', 'Lviv Oblast', 'Львів', 'Lviv', 'Lvivoblenerho'],
-    ['poltava', 'Полтавська обл.', 'Poltava Oblast', 'Полтава', 'Poltava', 'Poltavaoblenergo'],
-    ['rivne', 'Рівненська обл.', 'Rivne Oblast', 'Рівне', 'Rivne', 'Rivneoblenergo'],
-    ['ternopil', 'Тернопільська обл.', 'Ternopil Oblast', 'Тернопіль', 'Ternopil', 'Ternopiloblenerho'],
-    ['kharkiv', 'Харківська обл.', 'Kharkiv Oblast', 'Харків', 'Kharkiv', 'Kharkivoblenerho'],
-    ['khmelnytskyi', 'Хмельницька обл.', 'Khmelnytskyi Oblast', 'Хмельницький', 'Khmelnytskyi', 'Khmelnytskoblenerho'],
-    ['cherkasy', 'Черкаська обл.', 'Cherkasy Oblast', 'Черкаси', 'Cherkasy', 'Cherkasyoblenergo'],
-    ['chernihiv', 'Чернігівська обл.', 'Chernihiv Oblast', 'Чернігів', 'Chernihiv', 'Chernihivoblenergo'],
-  ].map(([id, ua, en, shortUa, shortEn, file]) =>
-    region(id, ua, en, shortUa, shortEn, { sources: [factFile(OE_OUTAGE_DATA + file + '.json')] })),
 ];
 
 const REGIONS_BY_ID = new Map(REGIONS.map(r => [r.id, r]));
@@ -79,11 +58,9 @@ function region(id, ua, en, shortUa, shortEn, { lookup = null, sources }) {
   return { id, name: { ua, en }, short: { ua: shortUa, en: shortEn }, lookup, sources };
 }
 
-/** What the widget needs to list the regions: Kyiv city first, then the oblasts alphabetically. */
+/** What the widget needs to list the regions. */
 function regionList() {
-  const order = r => (r.id === 'kem' ? '0' : '1' + r.name.ua);
-  return REGIONS.map(({ id, name, short, lookup }) => ({ id, name, short, lookup }))
-    .sort((a, b) => order(a).localeCompare(order(b), 'uk'));
+  return REGIONS.map(({ id, name, short, lookup }) => ({ id, name, short, lookup }));
 }
 
 /**
@@ -177,49 +154,6 @@ function yasno(regionId, dsoId) {
 function slotTypeAt(slots, minute) {
   const slot = (slots || []).find(s => s.start <= minute && minute < s.end);
   return slot ? slot.type : null;
-}
-
-/**
- * GET /outage-queue/by-type/3  -> [{ id, name: '1.1' }]
- * GET /schedule/time-series    -> [{ id, start: '00:00:00', end: '00:30:00' }]
- * GET /v2/schedule/active      -> [{ from: <Kyiv midnight, UTC ISO>, series: [{ time_series_id, outage_queue_id,
- *                                   type: 'OFF' | 'SURE_OFF' | 'PROBABLY_OFF' | 'ENABLE' }] }]
- * (format as described by the MIT-licensed fastiuk/ukraine-energy-monitor)
- */
-function mykolaiv() {
-  return {
-    name: 'mykolaiv', groups: null,
-    async load(fetchText) {
-      const get = async path => JSON.parse(await fetchText(MYKOLAIV_API + path, 'application/json'));
-      const [queues, series, active] = await Promise.all([
-        get('/outage-queue/by-type/3'), get('/schedule/time-series'), get('/v2/schedule/active'),
-      ]);
-      const groups = new Map(queues.filter(q => /^\d\.\d$/.test(q.name)).map(q => [q.id, 'GPV' + q.name]));
-      const halvesOf = new Map(series.map(s => [s.id, halfHoursBetween(s.start, s.end)]));
-      const data = {};
-      for (const day of active) {
-        const key = kyivMidnight(kyivDate(Date.parse(day.from) + 6 * 3_600_000));
-        const states = {};
-        for (const group of groups.values()) states[group] = Array(48).fill('on');
-        for (const cell of day.series || []) {
-          const group = groups.get(cell.outage_queue_id);
-          const state = cell.type === 'PROBABLY_OFF' ? 'maybe' : cell.type === 'OFF' || cell.type === 'SURE_OFF' ? 'off' : null;
-          if (!group || !state) continue;
-          for (const half of halvesOf.get(cell.time_series_id) || []) states[group][half] = state;
-        }
-        data[key] = Object.fromEntries(Object.entries(states).map(([g, halves]) => [g, hoursFromHalves(halves)]));
-      }
-      return { data, update: null };
-    },
-  };
-}
-
-function halfHoursBetween(start, end) {
-  const minutes = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
-  const from = minutes(start), to = minutes(end) || 24 * 60; // '00:00:00' as an end is midnight
-  const halves = [];
-  for (let m = from; m < to; m += 30) halves.push(Math.floor(m / 30));
-  return halves;
 }
 
 // 48 half-hours ('on' | 'off' | 'maybe') -> { 1..24: 'yes' | 'no' | 'first' | 'second' | 'maybe' }
