@@ -91,7 +91,7 @@ const TRANSLATIONS = {
     performanceImpact: 'Підвищить навантаження на систему',
     blurToggle: 'Прозорість / розмиття',
     pinPosition: 'Закріпити розташування',
-    pinHint: 'Віджет не можна буде перетягнути',
+    unpinPosition: 'Відкріпити',
     language: 'Мова',
     hideToTray: 'Сховати в трей',
     closeApp: 'Закрити',
@@ -123,7 +123,7 @@ const TRANSLATIONS = {
     performanceImpact: 'Increases system load',
     blurToggle: 'Transparency / Blur',
     pinPosition: 'Lock position',
-    pinHint: 'The widget cannot be dragged',
+    unpinPosition: 'Unlock position',
     language: 'Language',
     hideToTray: 'Hide to tray',
     closeApp: 'Close',
@@ -325,18 +325,6 @@ function renderShell(root) {
         </div>
       </label>
 ${DESKTOP ? `
-      <label class="dw-toggle-row">
-        <div class="dw-toggle-label">
-          ${t('pinPosition')}
-          <small>${t('pinHint')}</small>
-        </div>
-        <div class="dw-toggle-switch">
-          <input type="checkbox" id="dw-chk-pin" ${state.pinned ? 'checked' : ''}>
-          <div class="dw-toggle-track"></div>
-          <div class="dw-toggle-thumb"></div>
-        </div>
-      </label>
-
       <div class="dw-toggle-row">
         <div class="dw-toggle-label">${t('language')}</div>
         <label class="switch lang-switcher">
@@ -352,6 +340,7 @@ ${DESKTOP ? `
 
 ${DESKTOP ? `
     <div class="dw-window-actions">
+      <div id="dw-pin-btn" class="dw-window-btn dw-pin-btn"></div>
       <div id="dw-hide-btn" class="dw-window-btn" title="${t('hideToTray')}">–</div>
       <div id="dw-close-btn" class="dw-window-btn dw-window-close" title="${t('closeApp')}">✕</div>
     </div>` : ''}
@@ -398,12 +387,7 @@ function bindEvents() {
     state.region    = region;
     state.useAurora = document.getElementById('dw-chk-aurora').checked;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
-    const pin = document.getElementById('dw-chk-pin');
-    if (pin) state.pinned = pin.checked;
-    saveSettings({
-      group: state.group, region: state.region,
-      useAurora: state.useAurora, useBlur: state.useBlur, pinned: state.pinned,
-    });
+    saveSettings({ group: state.group, region: state.region, useAurora: state.useAurora, useBlur: state.useBlur });
     applyVisuals();
     closeSettings();
     startUpdate();
@@ -429,7 +413,29 @@ function bindEvents() {
 // Interactive parts of the widget; a press anywhere else moves the window (unless it is pinned)
 const NOT_DRAGGABLE = 'button, select, input, label, a, .dw-icon-btn, .dw-group-badge, .dw-window-btn, .dw-overlay';
 
+const PIN_ICON = `
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+       stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 3h6l-1 6 4 4H6l4-4z"/>
+    <line x1="12" y1="13" x2="12" y2="21"/>
+  </svg>`;
+
+// The pin locks the widget in place; it is lit while the widget is pinned
+function renderPinButton() {
+  const btn = document.getElementById('dw-pin-btn');
+  if (!btn) return;
+  btn.innerHTML = PIN_ICON;
+  btn.classList.toggle('active', state.pinned);
+  btn.title = t(state.pinned ? 'unpinPosition' : 'pinPosition');
+}
+
 function bindDesktopEvents() {
+  renderPinButton();
+  document.getElementById('dw-pin-btn').addEventListener('click', () => {
+    state.pinned = !state.pinned;
+    saveSettings({ pinned: state.pinned });
+    renderPinButton();
+  });
   document.getElementById('dw-hide-btn') .addEventListener('click', () => postToApp('hide'));
   document.getElementById('dw-close-btn').addEventListener('click', () => postToApp('close'));
   document.getElementById('dw-lang-checkbox').addEventListener('change', e => setLanguage(e.target.checked ? 'en' : 'ua'));
@@ -451,8 +457,6 @@ function openSettings() {
   refreshGroupSelect(state.region);
   document.getElementById('dw-chk-aurora')  .checked = state.useAurora;
   document.getElementById('dw-chk-blur')    .checked = state.useBlur;
-  const pin = document.getElementById('dw-chk-pin');
-  if (pin) pin.checked = state.pinned;
   // Nothing to go back to until a group has been saved once
   document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
 }
@@ -581,7 +585,8 @@ function updateInterface() {
   if (state.selectedDay === 1) dd.setDate(now.getDate() + 1);
   const dateEl = document.getElementById('dw-update-date');
   if (dateEl) {
-    const updated = state.updatedAt ? ` · ${t('updatedAt')} ${state.updatedAt}` : '';
+    // Only the time: the date is already in the line ('17.10.2026 16:27' -> '16:27')
+    const updated = state.updatedAt ? ` · ${t('updatedAt')} ${state.updatedAt.trim().split(/\s+/).pop()}` : '';
     dateEl.innerText = `${t('scheduleFor')} ${dd.toLocaleDateString(currentLang === 'ua' ? 'uk-UA' : 'en-US')}${updated}`;
   }
 
@@ -608,13 +613,27 @@ function updateInterface() {
       if (gridRoot) {
         gridRoot.innerHTML = `
           <div class="dw-no-data">
-            <svg width="90" height="90" viewBox="0 0 90 90" fill="none">
-              <rect x="8" y="14" width="74" height="52" rx="4" fill="none" stroke="white" stroke-width="2.5"/>
-              <path d="M22 14 L22 8 L30 8" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-              <path d="M68 14 L68 8 L60 8" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-              <line x1="45" y1="66" x2="45" y2="80" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-              <line x1="33" y1="80" x2="57" y2="80" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-              <text x="45" y="50" text-anchor="middle" font-size="28" font-family="Segoe UI,sans-serif" font-weight="700" fill="white" opacity="0.9">?</text>
+            <!-- An outage schedule table, crossed out corner to corner -->
+            <svg width="90" height="90" viewBox="0 0 90 90" fill="none" stroke="white"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="8" y="12" width="74" height="64" rx="6"/>
+              <line x1="8" y1="26" x2="82" y2="26"/>
+              <g stroke-width="1.5" opacity="0.55">
+                <line x1="30" y1="26" x2="30" y2="76"/>
+                <line x1="8" y1="42.7" x2="82" y2="42.7"/>
+                <line x1="8" y1="59.3" x2="82" y2="59.3"/>
+              </g>
+              <g stroke-width="2" opacity="0.75">
+                <line x1="14" y1="34.5" x2="24" y2="34.5"/>
+                <line x1="14" y1="51" x2="24" y2="51"/>
+                <line x1="14" y1="67.5" x2="24" y2="67.5"/>
+              </g>
+              <g stroke-width="1.5" fill="white" fill-opacity="0.25">
+                <rect x="36" y="30" width="18" height="9" rx="2"/>
+                <rect x="58" y="47" width="18" height="8" rx="2"/>
+                <rect x="40" y="63" width="26" height="9" rx="2"/>
+              </g>
+              <line x1="10" y1="14" x2="80" y2="74" stroke-width="3"/>
             </svg>
             <div>${t('notPublished')}</div>
           </div>`;

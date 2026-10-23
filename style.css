@@ -559,9 +559,10 @@ html.desktop .dw-container.aurora-on.blur-on {
   display: flex;
   gap: 4px;
   z-index: 2;
-  opacity: 0.35;
+  opacity: 0;
   transition: opacity 0.2s;
 }
+/* Shown only while the cursor is over the widget */
 .dw-container:hover .dw-window-actions { opacity: 1; }
 
 .dw-window-btn {
@@ -578,3 +579,4 @@ html.desktop .dw-container.aurora-on.blur-on {
 }
 .dw-window-btn:hover { background: rgba(255,255,255,0.15); color: white; }
 .dw-window-close:hover { background: rgba(255,68,68,0.8); }
+.dw-pin-btn.active { color: #00ff88; background: rgba(0,255,136,0.15); }
