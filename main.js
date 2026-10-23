@@ -3,9 +3,10 @@
  */
 
 // The page is served by server.js itself, so the API lives on the same origin and port
-const API_URL = '/api/dtek';
+const API_URL = '/api/schedule';
+const REGIONS_URL = '/api/regions';
 const UPDATE_INTERVAL_MS = 300_000;
-const DEFAULT_REGION = 'https://www.dtek-dnem.com.ua/ua/shutdowns';
+const DEFAULT_REGION = 'dnem';
 
 // The Windows app opens the page as "/?desktop" in its own frameless, transparent window: only the
 // widget is shown, and window actions (move, hide to tray, close) go to the app via WebView2 messages
@@ -29,21 +30,33 @@ if (DESKTOP && window.chrome && window.chrome.webview) {
   });
 }
 
-const REGIONS = {
-  'https://www.dtek-dnem.com.ua/ua/shutdowns': { ua: 'Дніпро та область', en: 'Dnipro & Region' },
-  'https://www.dtek-kem.com.ua/ua/shutdowns':  { ua: 'Київ (місто)', en: 'Kyiv (City)' },
-  'https://www.dtek-krem.com.ua/ua/shutdowns': { ua: 'Київська обл.', en: 'Kyiv Region' },
-  'https://www.dtek-oem.com.ua/ua/shutdowns':  { ua: 'Одеська обл.', en: 'Odesa Region' },
-  'https://www.dtek-dem.com.ua/ua/shutdowns':  { ua: 'Донецька обл.', en: 'Donetsk Region' },
-};
+// Regions come from the server (schedules.js): [{ id, name: {ua, en}, short: {ua, en}, lookup }]
+// lookup: the DTEK page whose address form finds groups by address, or null
+let REGIONS = [];
 
-const REGION_SHORT = {
-  'https://www.dtek-dnem.com.ua/ua/shutdowns': { ua: 'Дніпро', en: 'Dnipro' },
-  'https://www.dtek-kem.com.ua/ua/shutdowns':  { ua: 'Київ', en: 'Kyiv' },
-  'https://www.dtek-krem.com.ua/ua/shutdowns': { ua: 'Київ обл.', en: 'Kyiv Reg.' },
-  'https://www.dtek-oem.com.ua/ua/shutdowns':  { ua: 'Одеса', en: 'Odesa' },
-  'https://www.dtek-dem.com.ua/ua/shutdowns':  { ua: 'Донецьк', en: 'Donetsk' },
-};
+async function loadRegions() {
+  try {
+    const res = await fetch(REGIONS_URL);
+    if (res.ok) REGIONS = await res.json();
+  } catch { /* the schedule request reports the server as unavailable */ }
+}
+
+function regionById(id) { return REGIONS.find(r => r.id === id) || null; }
+
+function regionText(id, kind) {
+  const region = regionById(id);
+  const lang = document.documentElement.lang || 'ua';
+  return region ? region[kind][lang] || region[kind].ua : id;
+}
+
+// Settings saved before the region list grew stored the DTEK page URL as the region
+function migrateRegion(saved) {
+  const dtek = /^https:\/\/www\.dtek-([a-z]+)\.com\.ua\//.exec(saved || '');
+  return dtek ? dtek[1] : saved;
+}
+
+// ЦЕК's groups appear on the DTEK Dnipro site as GPV1001.1 ... GPV1006.2
+const CEK_GROUP = /^GPV100(\d+\.\d+)$/;
 
 // Used until a region's schedule has been loaded; Kyiv city, for one, has groups GPV1.1 ... GPV60.1
 const QUEUES = [
@@ -51,7 +64,7 @@ const QUEUES = [
   'GPV4.1','GPV4.2','GPV5.1','GPV5.2','GPV6.1','GPV6.2',
 ];
 
-// region -> groups found in its schedule; at most one entry per region in REGIONS
+// region -> groups found in its schedule; at most one entry per region
 const groupsByRegion = {};
 
 function rememberGroups(region, rawFact) {
@@ -136,6 +149,13 @@ const TRANSLATIONS = {
     scheduleFor: 'ГРАФІК НА',
     updatedAt: 'оновлено',
     notPublished: 'Графік ще не опубліковано',
+    notPublishedToday: 'Графіка на сьогодні немає',
+    noScheduleToday: 'Немає графіка',
+    addressNoPower: 'За адресою зараз немає світла',
+    plannedRepairs: 'Планові ремонтні роботи',
+    since: 'з',
+    approxUntil: 'орієнтовно до',
+    cekZone: 'адреса в зоні ЦЕК',
     botProtection: '☁ Сайт ДТЕК увімкнув захист від ботів — спробуйте пізніше',
     proxyUnavailable: '⚠ Проксі-сервер недоступний — запустіть node server.js',
   },
@@ -179,6 +199,13 @@ const TRANSLATIONS = {
     scheduleFor: 'SCHEDULE FOR',
     updatedAt: 'updated',
     notPublished: 'Schedule not published yet',
+    notPublishedToday: 'No schedule for today',
+    noScheduleToday: 'No schedule',
+    addressNoPower: 'No power at the address now',
+    plannedRepairs: 'Planned repair works',
+    since: 'since',
+    approxUntil: 'expected back by',
+    cekZone: 'the address is in the CEC zone',
     botProtection: '☁ DTEK site bot protection is active — try again later',
     proxyUnavailable: '⚠ Proxy server offline — run node server.js',
   }
@@ -249,12 +276,13 @@ function setLanguage(lang) {
 }
 
 // ── App Start ──
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initLanguageSwitcher();
 
   const root = document.getElementById('dtek-app-root');
   if (!root) return;
 
+  await loadRegions();
   restoreSavedSettings();
 
   renderShell(root);
@@ -304,7 +332,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function restoreSavedSettings() {
   const saved = loadSettings();
   state.group     = saved.group  || null;
-  state.region    = saved.region || DEFAULT_REGION;
+  state.region    = migrateRegion(saved.region) || DEFAULT_REGION;
+  if (REGIONS.length && !regionById(state.region)) state.region = DEFAULT_REGION;
+  // { region, city, street, house } picked with the address lookup; its current outage is shown
+  state.address   = saved.address && saved.address.region === state.region ? saved.address : null;
   // The desktop widget starts transparent; it can be switched off in the settings.
   // Settings saved before version 2 stored the old "off" default rather than a choice, so it is ignored.
   const appearanceSaved = saved.v >= SETTINGS_VERSION;
@@ -331,8 +362,8 @@ function renderShell(root) {
     <div id="dw-overlay" class="dw-overlay">
       <div class="dw-overlay-title">${t('regionCity')}</div>
       <select id="dw-region-select" class="dw-form-select">
-        ${Object.entries(REGIONS).map(([v, l]) =>
-          `<option value="${v}" ${v === state.region ? 'selected' : ''}>${l[currentLang] || l.ua}</option>`
+        ${REGIONS.map(r =>
+          `<option value="${r.id}" ${r.id === state.region ? 'selected' : ''}>${r.name[currentLang] || r.name.ua}</option>`
         ).join('')}
       </select>
 
@@ -424,6 +455,7 @@ ${DESKTOP ? `
         <div id="dw-status-text" class="dw-status-text">${t('waiting')}</div>
       </div>
       <div id="dw-update-date" class="dw-schedule-date">...</div>
+      <div id="dw-address-box" class="dw-address-box" hidden></div>
     </div>
 
     <div id="dw-grid-root" class="dw-schedule-grid"></div>
@@ -444,7 +476,11 @@ function bindEvents() {
     state.group     = document.getElementById('dw-group-select').value;
     state.region    = region;
     state.useBlur   = document.getElementById('dw-chk-blur').checked;
-    saveSettings({ group: state.group, region: state.region, useBlur: state.useBlur });
+    // An address picked in the lookup becomes the widget's address; another region drops the old one
+    if (lookup.picked && lookup.picked.region === region) state.address = lookup.picked;
+    else if (state.address && state.address.region !== region) state.address = null;
+    state.addressStatus = null;
+    saveSettings({ group: state.group, region: state.region, useBlur: state.useBlur, address: state.address });
     const autostart = document.getElementById('dw-chk-autostart');
     if (autostart && autostart.checked !== state.autostart) {
       state.autostart = autostart.checked;
@@ -497,13 +533,19 @@ const SITE_TIMEOUT_MS = 45_000; // the app may wait up to 30 s for the DTEK page
 const siteRequests = new Map(); // id -> { resolve, reject, timer }
 let siteRequestId = 0;
 
-function askSite(region, request) {
+function askSite(regionId, request) {
+  const page = regionById(regionId) && regionById(regionId).lookup;
+  if (!page) return Promise.reject('unavailable');
   return new Promise((resolve, reject) => {
     const id = ++siteRequestId;
     const timer = setTimeout(() => { siteRequests.delete(id); reject('unavailable'); }, SITE_TIMEOUT_MS);
     siteRequests.set(id, { resolve, reject, timer });
-    postToApp('addr:' + region + '|' + JSON.stringify({ id, ...request }));
+    postToApp('addr:' + page + '|' + JSON.stringify({ id, ...request }));
   });
+}
+
+function addressText(address) {
+  return [address.city, address.street, address.house].filter(Boolean).join(', ');
 }
 
 function onSiteAnswer(json) {
@@ -516,8 +558,9 @@ function onSiteAnswer(json) {
   if (answer.ok) pending.resolve(answer); else pending.reject(answer.error);
 }
 
-// The address being looked up in the settings: city (oblast regions only), street, house
-const lookup = { region: null, cities: false, city: '', street: '', houses: null, suggested: { city: [], street: [] } };
+// The address being looked up in the settings: city (oblast regions only), street, house;
+// picked: the complete address once a house is chosen, saved with the settings
+const lookup = { region: null, cities: false, city: '', street: '', houses: null, picked: null, suggested: { city: [], street: [] } };
 
 function debounce(fn, ms) {
   let timer;
@@ -540,7 +583,7 @@ async function openLookup() {
   const region = document.getElementById('dw-region-select').value;
   lookupEl('form').hidden = false;
   if (lookup.region === region) return;
-  Object.assign(lookup, { region, cities: false, city: '', street: '', houses: null });
+  Object.assign(lookup, { region, cities: false, city: '', street: '', houses: null, picked: null });
   ['city', 'street', 'house'].forEach(name => { lookupEl(name).value = ''; });
   ['cities', 'streets', 'houses'].forEach(list => fillList(list, []));
   setLookupNote(t('lookupLoading'));
@@ -620,10 +663,19 @@ async function loadHouses() {
 
 function pickHouse() {
   const house = lookupEl('house').value;
-  const groups = lookup.houses && lookup.houses[house];
+  let groups = lookup.houses && lookup.houses[house];
   if (!groups) return;
-  const address = [lookup.city, lookup.street, house].filter(Boolean).join(', ');
+  const address = addressText({ city: lookup.city, street: lookup.street, house });
   if (!groups.length) { setLookupNote(`${address}: ${t('lookupNoGroup')}`, true); return; }
+
+  // The Dnipro site serves both companies: a ЦЕК house (GPV1001.1 ...) belongs to the ЦЕК region
+  let note = '';
+  if (CEK_GROUP.test(groups[0]) && lookup.region !== 'cek' && regionById('cek')) {
+    lookup.region = 'cek';
+    document.getElementById('dw-region-select').value = 'cek';
+    note = ` (${t('cekZone')})`;
+  }
+  if (lookup.region === 'cek') groups = groups.map(g => g.replace(CEK_GROUP, 'GPV$1'));
 
   const group = groups[0];
   const select = document.getElementById('dw-group-select');
@@ -632,17 +684,26 @@ function pickHouse() {
     select.insertAdjacentHTML('afterbegin', `<option value="${group}">${group.replace('GPV', t('queueLabel'))}</option>`);
   }
   select.value = group;
+  lookup.picked = { region: lookup.region, city: lookup.city, street: lookup.street, house };
   const others = groups.slice(1).map(g => g.replace('GPV', '')).join(', ');
-  setLookupNote(`${address} → ${group.replace('GPV', t('queueLabel'))}` + (others ? ` (${t('alsoGroups')} ${others})` : ''));
+  setLookupNote(`${address} → ${group.replace('GPV', t('queueLabel'))}` + (others ? ` (${t('alsoGroups')} ${others})` : '') + note);
+}
+
+// The lookup needs the DTEK site of the region; other operators have no lookup here
+function showLookupButton(regionId) {
+  const region = regionById(regionId);
+  document.getElementById('dw-lookup-btn').hidden = !(region && region.lookup);
 }
 
 function bindLookupEvents() {
   lookup.region = null; // the form was just rendered empty
+  lookup.picked = null;
   document.getElementById('dw-lookup-btn').addEventListener('click', openLookup);
-  document.getElementById('dw-region-select').addEventListener('change', () => {
+  document.getElementById('dw-region-select').addEventListener('change', e => {
     lookup.region = null;
     lookupEl('form').hidden = true;
     setLookupNote('');
+    showLookupButton(e.target.value);
   });
   for (const kind of ['city', 'street']) {
     const suggestLater = debounce(() => suggestNames(kind), 250);
@@ -687,6 +748,10 @@ function openSettings() {
   if (autostart) autostart.checked = state.autostart;
   // Nothing to go back to until a group has been saved once
   document.getElementById('dw-cancel-btn').style.display = state.group ? 'block' : 'none';
+  if (DESKTOP) {
+    showLookupButton(state.region);
+    setLookupNote(state.address ? `📍 ${addressText(state.address)}` : '');
+  }
 }
 
 function closeSettings() {
@@ -736,6 +801,7 @@ async function startUpdate() {
       rememberGroups(state.region, data.rawFact);
       updateInterface();
       postPowerTimeline();
+      checkAddress();
     } else if (data.status === 'protected') {
       setError(t('botProtection'));
     } else {
@@ -768,14 +834,13 @@ function setRefreshSpinner(on) {
 function postPowerTimeline(failed = false) {
   if (!DESKTOP) return;
   if (failed) { postToApp('status:'); return; }
-  const points = [];
+  let points = [];
   let end = 0;
   const raw = state.currentRawData;
   if (raw && state.group) {
-    const days = Object.keys(raw).sort((a, b) => Number(a) - Number(b));
-    const first = Math.max(0, days.indexOf(state.todayKey));
-    days.slice(first, first + 2).forEach((day, i) => {
-      const hours = raw[day] && raw[day][state.group];
+    const [today, tomorrow] = scheduleDays();
+    [today, tomorrow].forEach((day, i) => {
+      const hours = day && raw[day] && raw[day][state.group];
       if (!hours || end === 0 && i > 0) return;
       const values = Array.from({ length: 24 }, (_, h) => String(hours[h + 1] || '').toLowerCase());
       if (i > 0 && !values.some(v => v === 'no' || v.includes('first') || v.includes('second'))) return;
@@ -790,7 +855,104 @@ function postPowerTimeline(failed = false) {
       end = start + 24 * 3_600_000;
     });
   }
+
+  // An outage DTEK reports for the saved address wins over the schedule until its estimated end
+  const outage = currentAddressOutage();
+  if (outage) {
+    const now = Date.now();
+    const until = outage.endMs && outage.endMs > now ? outage.endMs : Math.max(end, now + 60_000);
+    const after = stateAt(points, until);
+    points = points.filter(([time]) => time < now || time >= until);
+    points.push([now, true], [until, after]);
+    points.sort((a, b) => a[0] - b[0]);
+    points = points.filter((p, i) => i === 0 || p[1] !== points[i - 1][1]);
+    end = Math.max(end, until);
+  }
   postToApp('status:' + end + '|' + points.map(([time, off]) => time + ',' + (off ? 1 : 0)).join(';'));
+}
+
+function stateAt(points, time) {
+  let off = false;
+  for (const [at, value] of points) if (at <= time) off = value;
+  return off;
+}
+
+// Keys of today and tomorrow in the loaded schedule (null where that day is not there)
+function scheduleDays() {
+  const raw = state.currentRawData || {};
+  const days = Object.keys(raw).sort((a, b) => Number(a) - Number(b));
+  const today = state.todayKey && raw[state.todayKey] ? state.todayKey : null;
+  const tomorrow = days.find(day => Number(day) > Number(state.todayKey || 0)) || null;
+  return [today, tomorrow];
+}
+
+// ── Current outage at the saved address (desktop app, DTEK regions) ──
+// DTEK's answer for a house says whether it has power right now: type '1' planned repairs,
+// '2' the reason in sub_type (stabilisation by schedule, emergency ...), with start and
+// estimated end like '17:12 17.10.2026'. Checked with every schedule refresh.
+const ADDRESS_STATUS_TTL_MS = 30 * 60_000; // an older answer is not shown
+
+async function checkAddress() {
+  const address = state.address;
+  if (!DESKTOP || !address || address.region !== state.region) { state.addressStatus = null; return; }
+  try {
+    const answer = await askSite(address.region, { op: 'house', city: address.city, street: address.street, house: address.house });
+    if (state.address !== address) return;
+    const outage = answer.outage && {
+      reason: answer.outage.type === '1' ? t('plannedRepairs') : answer.outage.reason,
+      start: answer.outage.start, end: answer.outage.end,
+      startMs: parseDtekTime(answer.outage.start), endMs: parseDtekTime(answer.outage.end),
+    };
+    state.addressStatus = { checkedAt: Date.now(), found: answer.found, outage };
+  } catch {
+    if (state.addressStatus && Date.now() - state.addressStatus.checkedAt > ADDRESS_STATUS_TTL_MS) state.addressStatus = null;
+  }
+  if (state.currentRawData) updateInterface();
+  postPowerTimeline();
+}
+
+function currentAddressOutage() {
+  const status = state.addressStatus;
+  if (!status || Date.now() - status.checkedAt > ADDRESS_STATUS_TTL_MS || !status.outage) return null;
+  return status.outage.endMs && status.outage.endMs < Date.now() ? null : status.outage;
+}
+
+// '17:12 17.10.2026' (or the date first) -> ms; null when it cannot be read
+function parseDtekTime(text) {
+  const time = /(\d{1,2}):(\d{2})/.exec(text || ''), date = /(\d{2})\.(\d{2})\.(\d{4})/.exec(text || '');
+  if (!time || !date) return null;
+  return new Date(+date[3], +date[2] - 1, +date[1], +time[1], +time[2]).getTime();
+}
+
+// '22:00 17.10.2026' -> '22:00' today, '22:00 17.10' another day
+function shortDtekTime(text, ms) {
+  if (!ms) return text || '';
+  const at = new Date(ms), time = at.toTimeString().slice(0, 5);
+  return at.toDateString() === new Date().toDateString() ? time
+    : `${time} ${String(at.getDate()).padStart(2, '0')}.${String(at.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function renderAddressBox() {
+  const box = document.getElementById('dw-address-box');
+  if (!box) return;
+  const outage = currentAddressOutage();
+  const address = state.address && state.address.region === state.region ? state.address : null;
+  box.hidden = !address;
+  // The address lines take room from the schedule: its rows get tighter to keep all 24 hours in view
+  document.getElementById('dw-container').classList.toggle('compact', !!address);
+  if (!address) return;
+  box.classList.toggle('outage', !!outage);
+  const lines = [`📍 ${addressText(address)}`];
+  if (outage) {
+    lines.push(t('addressNoPower'));
+    if (outage.reason) lines.push(outage.reason);
+    const from = outage.start ? `${t('since')} ${shortDtekTime(outage.start, outage.startMs)}` : '';
+    const until = outage.end ? `${t('approxUntil')} ${shortDtekTime(outage.end, outage.endMs)}` : '';
+    if (from || until) lines.push([from, until].filter(Boolean).join(' · '));
+  }
+  box.replaceChildren(...lines.map((text, i) => Object.assign(document.createElement('div'), {
+    textContent: text, className: i === 1 ? 'dw-address-alert' : '',
+  })));
 }
 
 function setError(msg) {
@@ -810,18 +972,13 @@ function setError(msg) {
 
 function updateInterface() {
   const currentLang = document.documentElement.lang || 'ua';
-  const regionShortMap = REGION_SHORT[state.region];
-  const regionShort = regionShortMap ? (regionShortMap[currentLang] || regionShortMap.ua) : 'DTEK';
   const groupLabel  = state.group.replace('GPV', '');
   const groupTag    = document.getElementById('dw-group-tag');
-  if (groupTag) groupTag.innerText = `${regionShort} · ${groupLabel}`;
+  if (groupTag) groupTag.innerText = `${regionText(state.region, 'short')} · ${groupLabel}`;
 
   if (!state.currentRawData) return;
-  // Keys are unix timestamps of the days; DTEK names "today" explicitly, the earliest day is the fallback
-  const timestamps   = Object.keys(state.currentRawData).sort((a, b) => Number(a) - Number(b));
-  const todayIndex   = Math.max(0, timestamps.indexOf(state.todayKey));
-  const todayKey     = timestamps[todayIndex];
-  const tomorrowKey  = timestamps[todayIndex + 1];
+  // The server keeps only today and tomorrow (Kyiv time); a day a source has not published is missing
+  const [todayKey, tomorrowKey] = scheduleDays();
   const todayRaw     = todayKey    ? state.currentRawData[todayKey][state.group]    : null;
   const tomorrowRaw  = tomorrowKey ? state.currentRawData[tomorrowKey][state.group] : null;
 
@@ -846,15 +1003,20 @@ function updateInterface() {
   if (state.selectedDay === 1) dd.setDate(now.getDate() + 1);
   const dateEl = document.getElementById('dw-update-date');
   if (dateEl) {
-    // Only the time: the date is already in the line ('17.10.2026 16:27' -> '16:27')
-    const updated = state.updatedAt ? ` · ${t('updatedAt')} ${state.updatedAt.trim().split(/\s+/).pop()}` : '';
+    // Only the time when it is today's: the date is already in the line ('17.10.2026 16:27' -> '16:27')
+    const today = now.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const stamp = state.updatedAt && state.updatedAt.trim();
+    const updated = stamp ? ` · ${t('updatedAt')} ${stamp.startsWith(today) ? stamp.split(/\s+/).pop() : stamp}` : '';
     dateEl.innerText = `${t('scheduleFor')} ${dd.toLocaleDateString(currentLang === 'ua' ? 'uk-UA' : 'en-US')}${updated}`;
   }
 
-  const outNow = Object.keys(todayGrid).length > 0 ? todayGrid[ch] === '1' : false;
+  // What DTEK reports for the saved address now beats the schedule
+  const noScheduleToday = !todayRaw;
+  const outNow = currentAddressOutage() ? true : todayGrid[ch] === '1';
   const statusEl = document.getElementById('dw-status-text');
-  if (statusEl) statusEl.innerText = outNow ? t('noLight') : t('hasLight');
-  const accent = outNow ? '#ff4444' : '#00ff88';
+  if (statusEl) statusEl.innerText = outNow ? t('noLight') : noScheduleToday ? t('noScheduleToday') : t('hasLight');
+  const accent = outNow ? '#ff4444' : noScheduleToday ? '#8a919c' : '#00ff88';
+  renderAddressBox();
   const dot = document.getElementById('dw-dot');
   if (dot) {
     dot.style.backgroundColor = accent;
@@ -865,42 +1027,41 @@ function updateInterface() {
     container.style.borderColor = outNow ? 'rgba(255,68,68,0.5)' : 'rgba(0,255,136,0.5)';
   }
 
-  if (state.selectedDay === 1) {
-    const agKeys  = Object.keys(ag);
-    const allClear = agKeys.length > 0 && Object.values(ag).every(v => v === '0');
-    const noData   = agKeys.length === 0;
-    if (allClear || noData) {
-      const gridRoot = document.getElementById('dw-grid-root');
-      if (gridRoot) {
-        gridRoot.innerHTML = `
-          <div class="dw-no-data">
-            <!-- An outage schedule table, crossed out corner to corner -->
-            <svg width="90" height="90" viewBox="0 0 90 90" fill="none" stroke="white"
-                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="8" y="12" width="74" height="64" rx="6"/>
-              <line x1="8" y1="26" x2="82" y2="26"/>
-              <g stroke-width="1.5" opacity="0.55">
-                <line x1="30" y1="26" x2="30" y2="76"/>
-                <line x1="8" y1="42.7" x2="82" y2="42.7"/>
-                <line x1="8" y1="59.3" x2="82" y2="59.3"/>
-              </g>
-              <g stroke-width="2" opacity="0.75">
-                <line x1="14" y1="34.5" x2="24" y2="34.5"/>
-                <line x1="14" y1="51" x2="24" y2="51"/>
-                <line x1="14" y1="67.5" x2="24" y2="67.5"/>
-              </g>
-              <g stroke-width="1.5" fill="white" fill-opacity="0.25">
-                <rect x="36" y="30" width="18" height="9" rx="2"/>
-                <rect x="58" y="47" width="18" height="8" rx="2"/>
-                <rect x="40" y="63" width="26" height="9" rx="2"/>
-              </g>
-              <line x1="10" y1="14" x2="80" y2="74" stroke-width="3"/>
-            </svg>
-            <div>${t('notPublished')}</div>
-          </div>`;
-      }
-      return;
+  // Tomorrow without outages is not published yet; today without a schedule has none at all
+  const agKeys  = Object.keys(ag);
+  const allClear = agKeys.length > 0 && Object.values(ag).every(v => v === '0');
+  const noData   = agKeys.length === 0;
+  if (state.selectedDay === 1 ? allClear || noData : noScheduleToday) {
+    const gridRoot = document.getElementById('dw-grid-root');
+    if (gridRoot) {
+      gridRoot.innerHTML = `
+        <div class="dw-no-data">
+          <!-- An outage schedule table, crossed out corner to corner -->
+          <svg width="90" height="90" viewBox="0 0 90 90" fill="none" stroke="white"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="12" width="74" height="64" rx="6"/>
+            <line x1="8" y1="26" x2="82" y2="26"/>
+            <g stroke-width="1.5" opacity="0.55">
+              <line x1="30" y1="26" x2="30" y2="76"/>
+              <line x1="8" y1="42.7" x2="82" y2="42.7"/>
+              <line x1="8" y1="59.3" x2="82" y2="59.3"/>
+            </g>
+            <g stroke-width="2" opacity="0.75">
+              <line x1="14" y1="34.5" x2="24" y2="34.5"/>
+              <line x1="14" y1="51" x2="24" y2="51"/>
+              <line x1="14" y1="67.5" x2="24" y2="67.5"/>
+            </g>
+            <g stroke-width="1.5" fill="white" fill-opacity="0.25">
+              <rect x="36" y="30" width="18" height="9" rx="2"/>
+              <rect x="58" y="47" width="18" height="8" rx="2"/>
+              <rect x="40" y="63" width="26" height="9" rx="2"/>
+            </g>
+            <line x1="10" y1="14" x2="80" y2="74" stroke-width="3"/>
+          </svg>
+          <div>${state.selectedDay === 1 ? t('notPublished') : t('notPublishedToday')}</div>
+        </div>`;
     }
+    return;
   }
 
   let l = '', r = '';

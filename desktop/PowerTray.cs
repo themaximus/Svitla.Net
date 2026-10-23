@@ -110,7 +110,7 @@ sealed class PowerTray : IDisposable
             head = Program.AppName;
             next = schedule == Schedule.Loading     ? T("Графік завантажується…", "Loading the schedule…")
                  : schedule == Schedule.Unavailable ? T("Графік недоступний", "Schedule unavailable")
-                 : T("Відключень не заплановано", "No outages planned"); // DTEK lists no outages for the group
+                 : T("Графіка на сьогодні немає", "No schedule for today"); // nothing published for the group today
         }
         else
         {

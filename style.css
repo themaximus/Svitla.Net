@@ -575,3 +575,22 @@ html.desktop .dw-container.blur-on {
 .dw-lookup-note:empty { display: none; }.dw-form-input { cursor: text; }
 .dw-form-input::placeholder { color: rgba(255,255,255,0.4); }
 .dw-lookup-note.error { color: #ff6b6b; }.dw-form-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Desktop app: the saved address and what DTEK reports for it right now */
+.dw-address-box {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255,255,255,0.55);
+}
+.dw-address-box.outage {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255,68,68,0.12);
+  border: 1px solid rgba(255,68,68,0.35);
+  color: rgba(255,255,255,0.85);
+}
+.dw-address-alert { font-weight: 800; color: #ff8080; }.dw-container.compact .dw-status-section { margin-bottom: 12px; }
+.dw-container.compact .dw-schedule-col { gap: 4px; }
+.dw-container.compact .dw-schedule-row { padding: 6px 12px; }

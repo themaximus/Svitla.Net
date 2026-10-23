@@ -11,6 +11,8 @@
 //   widget -> site  {id, op: "streets"}                         -> {id, ok, cities: bool}
 //                   {id, op: "suggest", kind: "city"|"street", city, query} -> {id, ok, items: [...]}
 //                   {id, op: "houses", city, street}           -> {id, ok, houses: {"36": ["GPV19.1"]}}
+//                   {id, op: "house", city, street, house}     -> {id, ok, found, groups, updated,
+//                                                                  outage: {type, reason, start, end} | null}
 //   errors: {id, ok: false, error: "unavailable"|"failed"}
 
 using System;
@@ -82,6 +84,14 @@ sealed class DtekSiteAgent : IDisposable
     return found;
   }
 
+  // All houses of a street with their groups and current outages, as the site's form asks for them
+  function streetHouses(request) {
+    var data = [];
+    if (request.city) data.push({ name: 'city', value: request.city });
+    data.push({ name: 'street', value: request.street }, { name: 'house_num', value: '' });
+    return post({ method: 'getHomeNum', data: data });
+  }
+
   function handle(request) {
     if (request.op === 'streets') {
       return loadStreets().then(function (s) { return { cities: !Array.isArray(s) }; });
@@ -94,13 +104,23 @@ sealed class DtekSiteAgent : IDisposable
       });
     }
     if (request.op === 'houses') {
-      var data = [];
-      if (request.city) data.push({ name: 'city', value: request.city });
-      data.push({ name: 'street', value: request.street }, { name: 'house_num', value: '' });
-      return post({ method: 'getHomeNum', data: data }).then(function (a) {
+      return streetHouses(request).then(function (a) {
         var houses = {};
         Object.keys(a.data || {}).forEach(function (house) { houses[house] = groupsOf(a.data[house] && a.data[house].sub_type_reason); });
         return { houses: houses };
+      });
+    }
+    if (request.op === 'house') {
+      // What the site's yellow box says: no power now (type '1' planned repairs, '2' reason in
+      // sub_type), since start_date, estimated until end_date ('17:12 17.10.2026')
+      return streetHouses(request).then(function (a) {
+        var entry = a.data && a.data[request.house];
+        if (!entry) return { found: false, outage: null };
+        var out = entry.sub_type || entry.start_date || entry.end_date;
+        return {
+          found: true, groups: groupsOf(entry.sub_type_reason), updated: a.updateTimestamp || null,
+          outage: out ? { type: String(entry.type || ''), reason: entry.sub_type || '', start: entry.start_date || '', end: entry.end_date || '' } : null,
+        };
       });
     }
     return Promise.reject('failed');
