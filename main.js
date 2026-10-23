@@ -843,10 +843,11 @@ function postPowerTimeline(failed = false) {
       const hours = day && raw[day] && raw[day][state.group];
       if (!hours || end === 0 && i > 0) return;
       const values = Array.from({ length: 24 }, (_, h) => String(hours[h + 1] || '').toLowerCase());
-      if (i > 0 && !values.some(v => v === 'no' || v.includes('first') || v.includes('second'))) return;
+      // 'first' / 'second': no power in that half hour; 'mfirst', 'msecond', 'maybe': only possibly
+      if (i > 0 && !values.some(v => v === 'no' || v === 'first' || v === 'second')) return;
       const start = Number(day) * 1000;
       values.forEach((v, h) => {
-        const halves = [v === 'no' || v.includes('first'), v === 'no' || v.includes('second')];
+        const halves = [v === 'no' || v === 'first', v === 'no' || v === 'second'];
         halves.forEach((off, half) => {
           if (points.length && points[points.length - 1][1] === off) return;
           points.push([start + h * 3_600_000 + half * 1_800_000, off]);

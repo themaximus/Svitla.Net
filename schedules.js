@@ -79,9 +79,11 @@ function region(id, ua, en, shortUa, shortEn, { lookup = null, sources }) {
   return { id, name: { ua, en }, short: { ua: shortUa, en: shortEn }, lookup, sources };
 }
 
-/** What the widget needs to list the regions. */
+/** What the widget needs to list the regions: Kyiv city first, then the oblasts alphabetically. */
 function regionList() {
-  return REGIONS.map(({ id, name, short, lookup }) => ({ id, name, short, lookup }));
+  const order = r => (r.id === 'kem' ? '0' : '1' + r.name.ua);
+  return REGIONS.map(({ id, name, short, lookup }) => ({ id, name, short, lookup }))
+    .sort((a, b) => order(a).localeCompare(order(b), 'uk'));
 }
 
 /**
@@ -93,10 +95,13 @@ async function loadSchedule(regionId, fetchText) {
   const entry = REGIONS_BY_ID.get(regionId);
   if (!entry) return { status: 'error', message: 'Invalid region' };
   let failure = { status: 'error', message: 'No source answered' };
+  let withoutToday = null; // a source that answered but has nothing for today; a later one may have it
   for (const source of entry.sources) {
     try {
-      const fact = await source.load(fetchText);
-      return { status: 'success', fact: keepTodayAndTomorrow(fact, source.groups), source: source.name };
+      const fact = keepTodayAndTomorrow(await source.load(fetchText), source.groups);
+      const result = { status: 'success', fact, source: source.name };
+      if (fact.data[fact.today]) return result;
+      withoutToday = withoutToday || result;
     } catch (err) {
       console.error(`[schedule] ${regionId} ${source.name}: ${err.message}`);
       // DTEK's bot protection explains more to the user than a later source's failure
@@ -105,7 +110,7 @@ async function loadSchedule(regionId, fetchText) {
       }
     }
   }
-  return failure;
+  return withoutToday || failure;
 }
 
 // ── Sources: each has load(fetchText) -> fact (any days, any group names) and an optional groups mapper ──
