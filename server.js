@@ -103,7 +103,7 @@ function fetchText(url, accept, redirectsLeft = MAX_REDIRECTS) {
 }
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`\n  ⚡ DTEK Widget Server running at http://${HOST || 'localhost'}:${PORT}\n`);
+  console.log(`\n  ⚡ Світик Widget server running at http://${HOST || 'localhost'}:${PORT}\n`);
 });
 
 server.on('error', (err) => {

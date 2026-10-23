@@ -1,4 +1,4 @@
-# Builds the Windows installer: build\DTEK-Widget-Setup-<version>.exe
+﻿# Builds the Windows installer of Світик Widget: build\Svitik-Widget-Setup-<version>.exe
 #
 #   powershell -ExecutionPolicy Bypass -File desktop\build.ps1 [-Node <path to node.exe>] [-Iscc <path to ISCC.exe>]
 #
@@ -67,7 +67,7 @@ Copy-Item $wvCore, $wvForms, "$sdk\runtimes\win-x64\native\WebView2Loader.dll" $
 
 Write-Host '== launcher'
 & $csc /nologo /target:winexe /optimize+ /platform:x64 "/win32icon:$build\app.ico" `
-  "/out:$stage\DTEK Widget.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wvCore" "/r:$wvForms" `
+  "/out:$stage\Svitik Widget.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wvCore" "/r:$wvForms" `
   (Join-Path $PSScriptRoot 'Launcher.cs') (Join-Path $PSScriptRoot 'PowerTray.cs') (Join-Path $PSScriptRoot 'DtekSiteAgent.cs')
 if ($LASTEXITCODE) { throw 'launcher build failed' }
 
@@ -75,4 +75,4 @@ Write-Host '== installer'
 & $Iscc /Q "/DAppVersion=$version" "/DStageDir=$stage" "/DIconFile=$build\app.ico" "/O$build" (Join-Path $PSScriptRoot 'installer.iss')
 if ($LASTEXITCODE) { throw 'installer build failed' }
 
-Write-Host "`nDone: $build\DTEK-Widget-Setup-$version.exe"
+Write-Host "`nDone: $build\Svitik-Widget-Setup-$version.exe"

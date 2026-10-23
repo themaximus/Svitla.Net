@@ -1,10 +1,10 @@
-// Desktop app for the DTEK widget (Windows).
+// "Світик Widget": desktop app for the DTEK outage schedule widget (Windows).
 //
 // Starts the bundled node.exe with server.js on the loopback interface, without a console window,
 // and shows the widget through WebView2, the browser engine that is part of Windows, as a frameless
 // transparent desktop widget with a tray icon (show / hide / exit). The widget is moved by dragging
 // it (unless the user pinned it in its settings) and its position is remembered.
-// Browser data and the position live in %LOCALAPPDATA%\DTEK Widget, separate from the user's browsers.
+// Browser data and the position live in %LOCALAPPDATA%\Svitik Widget, separate from the user's browsers.
 // The server lives exactly as long as the window: it is attached to a kill-on-close job object,
 // so it never outlives the app, even if the app crashes.
 //
@@ -24,11 +24,62 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
+// What Windows shows for the exe (Task Manager, file properties)
+[assembly: System.Reflection.AssemblyTitle("Світик Widget")]
+[assembly: System.Reflection.AssemblyProduct("Світик Widget")]
+[assembly: System.Reflection.AssemblyDescription("Графік відключень світла ДТЕК")]
+
 static class Program
 {
-    public const string AppName = "DTEK Widget";
+    public const string AppName = "Світик Widget";   // what the user sees
+    public const string FileName = "Svitik Widget";  // folders, files and the autostart value
+    const string LegacyName = "DTEK Widget";          // the same, before the app was renamed
     const string MutexName = "DTEKWidgetLauncher"; // also the AppMutex of the installer
     const string ShowEventName = "DTEKWidgetShow";
+
+    public static string DataDir
+    {
+        get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), FileName); }
+    }
+
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    /// <summary>Start with Windows: our own value under the per-user Run key (the uninstaller removes it).</summary>
+    public static bool Autostart
+    {
+        get
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(RunKey))
+                return key != null && key.GetValue(FileName) != null;
+        }
+        set
+        {
+            using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
+            {
+                if (value) key.SetValue(FileName, "\"" + Application.ExecutablePath + "\"");
+                else key.DeleteValue(FileName, false);
+            }
+        }
+    }
+
+    // Data and autostart of the app from before the rename carry over, once
+    static void MoveLegacyData()
+    {
+        string legacyDir = Path.Combine(Path.GetDirectoryName(DataDir), LegacyName);
+        try
+        {
+            if (Directory.Exists(legacyDir) && !Directory.Exists(DataDir)) Directory.Move(legacyDir, DataDir);
+        }
+        catch (IOException) { } // in use or not movable: the app starts with fresh data
+        catch (UnauthorizedAccessException) { }
+
+        using (var key = Registry.CurrentUser.OpenSubKey(RunKey, true))
+        {
+            if (key == null || key.GetValue(LegacyName) == null) return;
+            key.DeleteValue(LegacyName, false);
+            Autostart = true;
+        }
+    }
 
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
@@ -46,6 +97,7 @@ static class Program
                 return 0;
             }
 
+            MoveLegacyData();
             // Without this Windows stretches the window as a bitmap on scaled displays and the text blurs
             SetProcessDPIAware();
             Application.EnableVisualStyles();
@@ -70,8 +122,7 @@ sealed class WidgetForm : Form
     float dpiScale = 1;
 
     readonly string appDir = AppDomain.CurrentDomain.BaseDirectory;
-    readonly string dataDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Program.AppName);
+    readonly string dataDir = Program.DataDir;
     // "x y hidden": where the widget was, and whether it was left hidden in the tray
     string WindowStateFile { get { return Path.Combine(dataDir, "window.txt"); } }
 
@@ -209,27 +260,6 @@ sealed class WidgetForm : Form
         if (Visible) Hide(); else ShowWidget();
     }
 
-    // ── Start with Windows: our own value under the per-user Run key (the uninstaller removes it) ──
-
-    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-
-    static bool Autostart
-    {
-        get
-        {
-            using (var key = Registry.CurrentUser.OpenSubKey(RunKey))
-                return key != null && key.GetValue(Program.AppName) != null;
-        }
-        set
-        {
-            using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
-            {
-                if (value) key.SetValue(Program.AppName, "\"" + Application.ExecutablePath + "\"");
-                else key.DeleteValue(Program.AppName, false);
-            }
-        }
-    }
-
     // ── Settings: a file copy of the page's localStorage settings, written at once ──
 
     string SettingsFile { get { return Path.Combine(dataDir, "settings.json"); } }
@@ -288,7 +318,7 @@ sealed class WidgetForm : Form
         else if (message.StartsWith("lang:")) tray.English = message == "lang:en";
         else if (message.StartsWith("addr:")) RelayAddressRequest(message.Substring("addr:".Length));
         else if (message.StartsWith("settings:")) SaveSettings(message.Substring("settings:".Length));
-        else if (message.StartsWith("autostart:")) Autostart = message == "autostart:on";
+        else if (message.StartsWith("autostart:")) Program.Autostart = message == "autostart:on";
         else if (message.StartsWith("status:")) tray.SetTimeline(message.Substring("status:".Length));
     }
 
@@ -362,7 +392,7 @@ sealed class WidgetForm : Form
                 restoreScriptId = null;
             }
             // The Run key is the truth: setup's "start with Windows" task writes it too
-            core.PostWebMessageAsString("autostart:" + (Autostart ? "on" : "off"));
+            core.PostWebMessageAsString("autostart:" + (Program.Autostart ? "on" : "off"));
         };
     }
 

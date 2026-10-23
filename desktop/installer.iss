@@ -1,10 +1,10 @@
-﻿; Inno Setup script for the DTEK widget. Built by desktop\build.ps1, which passes
+﻿; Inno Setup script for Світик Widget (the DTEK outage widget). Built by desktop\build.ps1, which passes
 ; AppVersion, StageDir (prepared app, node runtime and launcher) and IconFile.
 ;
-; Per-user install into %LOCALAPPDATA%\Programs\DTEK Widget, no administrator rights needed.
+; Per-user install into %LOCALAPPDATA%\Programs\Svitik Widget, no administrator rights needed.
 ; The uninstaller removes exactly what this app puts on the machine: the install folder,
-; its data folder %LOCALAPPDATA%\DTEK Widget (WebView2 browser data, server log), its shortcuts,
-; its autostart value and its own uninstall entry.
+; its data folder %LOCALAPPDATA%\Svitik Widget (WebView2 browser data, settings, server log), its shortcuts,
+; its autostart value and its own uninstall entry - and those of the app's earlier name, DTEK Widget.
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
@@ -16,8 +16,12 @@
   #define IconFile "..\build\app.ico"
 #endif
 
-#define AppName "DTEK Widget"
-#define AppExe "DTEK Widget.exe"
+; AppName: what the user sees. AppFile: folders, the exe and the autostart value (Launcher.cs: Program.FileName).
+; LegacyName: the same, before the app was renamed.
+#define AppName "Світик Widget"
+#define AppFile "Svitik Widget"
+#define AppExe AppFile + ".exe"
+#define LegacyName "DTEK Widget"
 
 [Setup]
 AppId={{5E2567F6-BD90-4525-8016-2407BEEFE04A}
@@ -26,13 +30,13 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Maksym Herashchenko
 AppPublisherURL=https://github.com/themaximus/DTEK-Wiget
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={autopf}\{#AppFile}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ; The launcher holds this mutex while it runs, so setup and uninstall ask to close the widget first
 AppMutex=DTEKWidgetLauncher
-OutputBaseFilename=DTEK-Widget-Setup-{#AppVersion}
+OutputBaseFilename=Svitik-Widget-Setup-{#AppVersion}
 SetupIconFile={#IconFile}
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -64,11 +68,10 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Registry]
-; Only our own value under Run; removed on uninstall, the key itself is left alone
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; \
+; Only our own value under Run; removed on uninstall, the key itself is left alone. Setup only adds it:
+; afterwards the widget's own setting owns it, so an update does not switch it off.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppFile}"; \
   ValueData: """{app}\{#AppExe}"""; Tasks: autostart; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#AppName}"; \
-  Tasks: not autostart; Flags: deletevalue
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
@@ -76,10 +79,15 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 [InstallDelete]
 ; Leftovers of a previous version's dependencies must not mix with the new ones
 Type: filesandordirs; Name: "{app}\app\node_modules"
+; Under the earlier name: the exe and the shortcuts (the app moves its data and autostart itself)
+Type: files; Name: "{app}\{#LegacyName}.exe"
+Type: files; Name: "{autoprograms}\{#LegacyName}.lnk"
+Type: files; Name: "{autodesktop}\{#LegacyName}.lnk"
 
 [UninstallDelete]
 ; Created at run time by the app and its WebView2 window, not by setup
-Type: filesandordirs; Name: "{localappdata}\{#AppName}"
+Type: filesandordirs; Name: "{localappdata}\{#AppFile}"
+Type: filesandordirs; Name: "{localappdata}\{#LegacyName}"
 Type: dirifempty; Name: "{app}"
 
 [Code]
@@ -91,11 +99,11 @@ const
 
 { Explorer keeps Start menu and jump list bookkeeping for every launched program, keyed by the
   exe path. Only the entries named after our own exe are removed; Windows rebuilds them on demand. }
-procedure RemoveShellTraces;
+procedure RemoveShellTraces(ExeName: String);
 var
   Exe, TileId: String;
 begin
-  Exe := ExpandConstant('{app}\{#AppExe}');
+  Exe := ExpandConstant('{app}\') + ExeName;
   RegDeleteValue(HKEY_CURRENT_USER, ShellKey + '\Search\JumplistData', Exe);
   RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, ShellKey + '\Start\TileProperties\W~' + ExpandConstant('{app}'));
 
@@ -112,7 +120,9 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     { The widget's own "start with Windows" setting writes this value too, not only setup's task }
-    RegDeleteValue(HKEY_CURRENT_USER, ShellKey + '\Run', '{#AppName}');
-    RemoveShellTraces;
+    RegDeleteValue(HKEY_CURRENT_USER, ShellKey + '\Run', '{#AppFile}');
+    RegDeleteValue(HKEY_CURRENT_USER, ShellKey + '\Run', '{#LegacyName}');
+    RemoveShellTraces('{#AppExe}');
+    RemoveShellTraces('{#LegacyName}.exe');
   end;
 end;
