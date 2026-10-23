@@ -572,4 +572,6 @@ html.desktop .dw-container.blur-on {
   margin-bottom: 14px;
   line-height: 1.4;
 }
-.dw-lookup-note:empty { display: none; }
+.dw-lookup-note:empty { display: none; }.dw-form-input { cursor: text; }
+.dw-form-input::placeholder { color: rgba(255,255,255,0.4); }
+.dw-lookup-note.error { color: #ff6b6b; }.dw-form-input:disabled { opacity: 0.5; cursor: not-allowed; }

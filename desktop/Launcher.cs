@@ -82,9 +82,8 @@ sealed class WidgetForm : Form
     readonly PowerTray tray;
     bool startHidden, shownOnce;
     string restoreScriptId;
-    bool english;
-    CoreWebView2Environment browserEnvironment; // shared with the address lookup window
-    AddressLookupForm addressLookup;
+    CoreWebView2Environment browserEnvironment; // shared with the invisible DTEK page
+    DtekSiteAgent siteAgent;
     StreamWriter log;
     Process server;
     bool closing;
@@ -260,20 +259,18 @@ sealed class WidgetForm : Form
                " } catch (e) {} })(" + json + ");";
     }
 
-    // ── Group lookup by address on the DTEK site (AddressLookup.cs) ──
+    // ── Group lookup by address: "addr:<region url>|<request JSON>" to the invisible DTEK page ──
 
-    void OpenAddressLookup(string regionUrl)
+    void RelayAddressRequest(string message)
     {
-        if (!AddressLookupForm.IsDtekPage(regionUrl) || browserEnvironment == null) return;
-        if (addressLookup != null && !addressLookup.IsDisposed) { addressLookup.Activate(); return; }
-
-        addressLookup = new AddressLookupForm(browserEnvironment, regionUrl, Icon, dpiScale, english, found =>
+        int split = message.IndexOf('|');
+        if (split < 0 || browserEnvironment == null) return;
+        if (siteAgent == null)
         {
-            webView.CoreWebView2.PostWebMessageAsString("groupFound:" + found);
-            ShowWidget();
-        });
-        addressLookup.FormClosed += (s, e) => addressLookup = null;
-        addressLookup.Show();
+            siteAgent = new DtekSiteAgent(this, browserEnvironment,
+                answer => webView.CoreWebView2.PostWebMessageAsString("addr:" + answer), Log);
+        }
+        siteAgent.Request(message.Substring(0, split), message.Substring(split + 1));
     }
 
     // ── Messages from the page (main.js, postToApp) ──
@@ -288,8 +285,8 @@ sealed class WidgetForm : Form
         }
         else if (message == "hide") Hide();
         else if (message == "close") Close();
-        else if (message.StartsWith("lang:")) tray.English = english = message == "lang:en";
-        else if (message.StartsWith("findGroup:")) OpenAddressLookup(message.Substring("findGroup:".Length));
+        else if (message.StartsWith("lang:")) tray.English = message == "lang:en";
+        else if (message.StartsWith("addr:")) RelayAddressRequest(message.Substring("addr:".Length));
         else if (message.StartsWith("settings:")) SaveSettings(message.Substring("settings:".Length));
         else if (message.StartsWith("autostart:")) Autostart = message == "autostart:on";
         else if (message.StartsWith("status:")) tray.SetTimeline(message.Substring("status:".Length));
@@ -484,7 +481,7 @@ sealed class WidgetForm : Form
     {
         closing = true;
         SaveWindowState();
-        if (addressLookup != null) addressLookup.Close();
+        if (siteAgent != null) siteAgent.Dispose();
         tray.Dispose();
         showWait.Unregister(null);
         webView.Dispose(); // shuts the WebView2 browser processes down before the app exits

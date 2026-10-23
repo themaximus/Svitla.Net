@@ -21,7 +21,7 @@ function postToApp(message) {
 if (DESKTOP && window.chrome && window.chrome.webview) {
   window.chrome.webview.addEventListener('message', e => {
     if (e.data === 'refresh') { startUpdate(); return; }
-    if (typeof e.data === 'string' && e.data.startsWith('groupFound:')) { applyFoundGroup(e.data.slice('groupFound:'.length)); return; }
+    if (typeof e.data === 'string' && e.data.startsWith('addr:')) { onSiteAnswer(e.data.slice('addr:'.length)); return; }
     if (typeof e.data !== 'string' || !e.data.startsWith('autostart:')) return;
     state.autostart = e.data === 'autostart:on';
     const checkbox = document.getElementById('dw-chk-autostart');
@@ -100,7 +100,14 @@ const TRANSLATIONS = {
     regionCity: 'Регіон / Місто',
     outageQueue: 'Черга відключень',
     findByAddress: '🔍 Знайти чергу за адресою',
-    foundByAddress: 'Знайдено за адресою',
+    lookupCity: 'Населений пункт',
+    lookupStreet: 'Вулиця',
+    lookupCityFirst: 'Вулиця (спершу оберіть населений пункт)',
+    lookupHouse: 'Будинок',
+    lookupLoading: 'Завантажую адреси з сайту ДТЕК…',
+    lookupHousesLoading: 'Шукаю будинки…',
+    lookupUnavailable: 'Сайт ДТЕК зараз не відповідає, спробуйте пізніше',
+    lookupNoGroup: 'черга не вказана',
     alsoGroups: 'також',
     queueLabel: 'Черга ',
     save: 'ЗБЕРЕГТИ',
@@ -136,7 +143,14 @@ const TRANSLATIONS = {
     regionCity: 'Region / City',
     outageQueue: 'Outage Group',
     findByAddress: '🔍 Find group by address',
-    foundByAddress: 'Found for',
+    lookupCity: 'Town / village',
+    lookupStreet: 'Street',
+    lookupCityFirst: 'Street (choose the town first)',
+    lookupHouse: 'House',
+    lookupLoading: 'Loading addresses from the DTEK site…',
+    lookupHousesLoading: 'Looking up houses…',
+    lookupUnavailable: 'The DTEK site does not respond, try again later',
+    lookupNoGroup: 'no group listed',
     alsoGroups: 'also',
     queueLabel: 'Group ',
     save: 'SAVE',
@@ -328,6 +342,14 @@ function renderShell(root) {
       </select>
 ${DESKTOP ? `
       <button id="dw-lookup-btn" class="dw-btn-lookup">${t('findByAddress')}</button>
+      <div id="dw-lookup-form" class="dw-lookup" hidden>
+        <input id="dw-lookup-city" class="dw-form-select dw-form-input" list="dw-lookup-cities" placeholder="${t('lookupCity')}" autocomplete="off" hidden>
+        <datalist id="dw-lookup-cities"></datalist>
+        <input id="dw-lookup-street" class="dw-form-select dw-form-input" list="dw-lookup-streets" placeholder="${t('lookupStreet')}" autocomplete="off">
+        <datalist id="dw-lookup-streets"></datalist>
+        <input id="dw-lookup-house" class="dw-form-select dw-form-input" list="dw-lookup-houses" placeholder="${t('lookupHouse')}" autocomplete="off">
+        <datalist id="dw-lookup-houses"></datalist>
+      </div>
       <div id="dw-lookup-note" class="dw-lookup-note"></div>` : ''}
 
       <button id="dw-save-btn" class="dw-btn-big dw-btn-save">${t('save')}</button>
@@ -468,35 +490,174 @@ function renderPinButton() {
   btn.title = t(state.pinned ? 'unpinPosition' : 'pinPosition');
 }
 
-// The app opens the selected region's DTEK page; the user looks the address up there
-// and the app sends back {street, house, groups}
-let lookupRegion = null;
+// ── Group lookup by address (desktop app) ──
+// The app keeps the region's DTEK page open in an invisible browser. Questions go there as
+// "addr:<region url>|{id, op, ...}" and answers come back as "addr:{id, ok, ...}" (DtekSiteAgent.cs).
+const SITE_TIMEOUT_MS = 45_000; // the app may wait up to 30 s for the DTEK page (DtekSiteAgent.cs)
+const siteRequests = new Map(); // id -> { resolve, reject, timer }
+let siteRequestId = 0;
 
-function applyFoundGroup(json) {
-  let found;
-  try { found = JSON.parse(json); } catch { return; }
-  if (!found || !Array.isArray(found.groups) || !found.groups.length) return;
-  if (!document.getElementById('dw-overlay').classList.contains('visible')) openSettings();
-  const region = lookupRegion || state.region;
-  document.getElementById('dw-region-select').value = region;
-  const group = found.groups[0];
+function askSite(region, request) {
+  return new Promise((resolve, reject) => {
+    const id = ++siteRequestId;
+    const timer = setTimeout(() => { siteRequests.delete(id); reject('unavailable'); }, SITE_TIMEOUT_MS);
+    siteRequests.set(id, { resolve, reject, timer });
+    postToApp('addr:' + region + '|' + JSON.stringify({ id, ...request }));
+  });
+}
+
+function onSiteAnswer(json) {
+  let answer;
+  try { answer = JSON.parse(json); } catch { return; }
+  const pending = siteRequests.get(answer.id);
+  if (!pending) return;
+  siteRequests.delete(answer.id);
+  clearTimeout(pending.timer);
+  if (answer.ok) pending.resolve(answer); else pending.reject(answer.error);
+}
+
+// The address being looked up in the settings: city (oblast regions only), street, house
+const lookup = { region: null, cities: false, city: '', street: '', houses: null, suggested: { city: [], street: [] } };
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+}
+
+function lookupEl(name) { return document.getElementById('dw-lookup-' + name); }
+
+function setLookupNote(text, isError = false) {
+  const note = lookupEl('note');
+  note.textContent = text;
+  note.classList.toggle('error', isError);
+}
+
+function fillList(name, values) {
+  lookupEl(name).replaceChildren(...values.map(value => Object.assign(document.createElement('option'), { value })));
+}
+
+async function openLookup() {
+  const region = document.getElementById('dw-region-select').value;
+  lookupEl('form').hidden = false;
+  if (lookup.region === region) return;
+  Object.assign(lookup, { region, cities: false, city: '', street: '', houses: null });
+  ['city', 'street', 'house'].forEach(name => { lookupEl(name).value = ''; });
+  ['cities', 'streets', 'houses'].forEach(list => fillList(list, []));
+  setLookupNote(t('lookupLoading'));
+  try {
+    const answer = await askSite(region, { op: 'streets' });
+    if (lookup.region !== region) return;
+    lookup.cities = answer.cities;
+    lookupEl('city').hidden = !answer.cities;
+    setStreetEnabled(!answer.cities); // an oblast lists streets per town: the town comes first
+    (answer.cities ? lookupEl('city') : lookupEl('street')).focus();
+    setLookupNote('');
+  } catch {
+    if (lookup.region === region) lookup.region = null;
+    setLookupNote(t('lookupUnavailable'), true);
+  }
+}
+
+async function suggestNames(kind) {
+  const region = lookup.region;
+  if (!region) return;
+  try {
+    const answer = await askSite(region, { op: 'suggest', kind, city: lookup.city, query: lookupEl(kind).value });
+    if (region !== lookup.region) return;
+    lookup.suggested[kind] = answer.items;
+    fillList(kind === 'city' ? 'cities' : 'streets', answer.items);
+    pickIfExact(kind);
+  } catch { /* the next keystroke asks again */ }
+}
+
+// A suggestion picked from the list (or typed in full) moves on to the next field
+function pickIfExact(kind) {
+  const value = lookupEl(kind).value;
+  if (!lookup.suggested[kind].includes(value) || lookup[kind] === value) return;
+  lookup[kind] = value;
+  if (kind === 'city') {
+    lookup.street = '';
+    lookupEl('street').value = '';
+    fillList('streets', []);
+    setStreetEnabled(true);
+    lookupEl('street').focus();
+  }
+  lookup.houses = null;
+  lookupEl('house').value = '';
+  fillList('houses', []);
+  if (kind === 'street') loadHouses();
+}
+
+function setStreetEnabled(enabled) {
+  const street = lookupEl('street');
+  street.disabled = !enabled;
+  street.placeholder = enabled ? t('lookupStreet') : t('lookupCityFirst');
+}
+
+// Editing the chosen town drops the street and houses that belonged to it
+function onCityEdited() {
+  if (!lookup.city || lookupEl('city').value === lookup.city) return;
+  Object.assign(lookup, { city: '', street: '', houses: null });
+  ['street', 'house'].forEach(name => { lookupEl(name).value = ''; });
+  ['streets', 'houses'].forEach(list => fillList(list, []));
+  setStreetEnabled(false);
+}
+
+async function loadHouses() {
+  const { region, city, street } = lookup;
+  setLookupNote(t('lookupHousesLoading'));
+  try {
+    const answer = await askSite(region, { op: 'houses', city, street });
+    if (region !== lookup.region || street !== lookup.street) return;
+    lookup.houses = answer.houses;
+    fillList('houses', Object.keys(answer.houses).sort((a, b) => a.localeCompare(b, 'uk', { numeric: true })));
+    setLookupNote('');
+    lookupEl('house').focus();
+  } catch {
+    setLookupNote(t('lookupUnavailable'), true);
+  }
+}
+
+function pickHouse() {
+  const house = lookupEl('house').value;
+  const groups = lookup.houses && lookup.houses[house];
+  if (!groups) return;
+  const address = [lookup.city, lookup.street, house].filter(Boolean).join(', ');
+  if (!groups.length) { setLookupNote(`${address}: ${t('lookupNoGroup')}`, true); return; }
+
+  const group = groups[0];
   const select = document.getElementById('dw-group-select');
-  select.innerHTML = groupOptions(region, group);
-  if (select.value !== group) select.insertAdjacentHTML('afterbegin', `<option value="${group}" selected>${group.replace('GPV', t('queueLabel'))}</option>`);
+  select.innerHTML = groupOptions(lookup.region, group);
+  if (select.value !== group) {
+    select.insertAdjacentHTML('afterbegin', `<option value="${group}">${group.replace('GPV', t('queueLabel'))}</option>`);
+  }
   select.value = group;
+  const others = groups.slice(1).map(g => g.replace('GPV', '')).join(', ');
+  setLookupNote(`${address} → ${group.replace('GPV', t('queueLabel'))}` + (others ? ` (${t('alsoGroups')} ${others})` : ''));
+}
 
-  const note = document.getElementById('dw-lookup-note');
-  const others = found.groups.slice(1).map(g => g.replace('GPV', '')).join(', ');
-  note.textContent = `${t('foundByAddress')}: ${found.street || ''} ${found.house || ''} → ${group.replace('GPV', t('queueLabel'))}` +
-    (others ? ` (${t('alsoGroups')} ${others})` : '');
+function bindLookupEvents() {
+  lookup.region = null; // the form was just rendered empty
+  document.getElementById('dw-lookup-btn').addEventListener('click', openLookup);
+  document.getElementById('dw-region-select').addEventListener('change', () => {
+    lookup.region = null;
+    lookupEl('form').hidden = true;
+    setLookupNote('');
+  });
+  for (const kind of ['city', 'street']) {
+    const suggestLater = debounce(() => suggestNames(kind), 250);
+    lookupEl(kind).addEventListener('input', () => {
+      if (kind === 'city') onCityEdited();
+      pickIfExact(kind);
+      suggestLater();
+    });
+  }
+  lookupEl('house').addEventListener('input', pickHouse);
 }
 
 function bindDesktopEvents() {
   renderPinButton();
-  document.getElementById('dw-lookup-btn').addEventListener('click', () => {
-    lookupRegion = document.getElementById('dw-region-select').value;
-    postToApp('findGroup:' + lookupRegion);
-  });
+  bindLookupEvents();
   document.getElementById('dw-pin-btn').addEventListener('click', () => {
     state.pinned = !state.pinned;
     saveSettings({ pinned: state.pinned });
