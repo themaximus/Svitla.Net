@@ -60,8 +60,11 @@ function rememberGroups(region, rawFact) {
 
 function groupOptions(region, selected) {
   const groups = groupsByRegion[region] || QUEUES;
-  // Keep a saved group selectable even if the list has not been loaded yet
-  const list = selected && !groups.includes(selected) ? [selected, ...groups] : groups;
+  // Keep the saved group of the saved region selectable while that region's list is not loaded yet.
+  // Any other group missing from the list belongs to another region (Kyiv city has up to 60.1)
+  // and must not be carried over to this one.
+  const keepSaved = selected && !groups.includes(selected) && region === state.region && selected === state.group;
+  const list = keepSaved ? [selected, ...groups] : groups;
   return list.map(q =>
     `<option value="${q}" ${q === selected ? 'selected' : ''}>${q.replace('GPV', t('queueLabel'))}</option>`
   ).join('');
