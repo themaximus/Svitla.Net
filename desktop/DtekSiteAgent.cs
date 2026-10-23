@@ -13,6 +13,7 @@
 //                   {id, op: "houses", city, street}           -> {id, ok, houses: {"36": ["GPV19.1"]}}
 //                   {id, op: "house", city, street, house}     -> {id, ok, found, groups, updated,
 //                                                                  outage: {type, reason, start, end} | null}
+//                   {id, op: "notice"}                         -> {id, ok, emergency, message}
 //   errors: {id, ok: false, error: "unavailable"|"failed"}
 
 using System;
@@ -108,6 +109,15 @@ sealed class DtekSiteAgent : IDisposable
         var houses = {};
         Object.keys(a.data || {}).forEach(function (house) { houses[house] = groupsOf(a.data[house] && a.data[house].sub_type_reason); });
         return { houses: houses };
+      });
+    }
+    if (request.op === 'notice') {
+      // The page's pop-up as served now (the loaded page may be hours old): during emergency outages
+      // it says the schedules do not apply ('введені екстрені відключення ... Графіки ... не діють')
+      return fetch(location.pathname, { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (html) {
+        var match = html.match(/class=""m-attention__text""[^>]*>([\s\S]*?)<\/div>/);
+        var text = match ? match[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        return { emergency: /екстрен/i.test(text) && /не\s+ді/i.test(text), message: text };
       });
     }
     if (request.op === 'house') {

@@ -77,7 +77,7 @@ async function loadSchedule(regionId, fetchText) {
     try {
       const fact = keepTodayAndTomorrow(await source.load(fetchText), source.groups);
       const result = { status: 'success', fact, source: source.name };
-      if (fact.data[fact.today]) return result;
+      if (fact.data[fact.today] || fact.emergency.today) return result;
       withoutToday = withoutToday || result;
     } catch (err) {
       console.error(`[schedule] ${regionId} ${source.name}: ${err.message}`);
@@ -110,9 +110,21 @@ function dtekPage(url, groups = null) {
         }
         throw new Error('Schedule data not found on page');
       }
-      return factOf(JSON.parse(match[1]));
+      const fact = factOf(JSON.parse(match[1]));
+      // During emergency outages the page keeps the last schedule and says in a pop-up that it does not apply
+      const notice = emergencyNotice(html);
+      if (notice) fact.emergency = { dates: [kyivDate(Date.now())], message: notice };
+      return fact;
     },
   };
+}
+
+// The DTEK pages' pop-up (m-attention): 'За наказом НЕК Укренерго введені екстрені відключення ... Графіки ... не діють'
+function emergencyNotice(html) {
+  const match = html.match(/class="m-attention__text"[^>]*>([\s\S]*?)<\/div>/);
+  if (!match) return null;
+  const text = match[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  return /екстрен/i.test(text) && /не\s+ді/i.test(text) ? text : null;
 }
 
 // Mirror files wrap the fact: { regionId, lastUpdated, fact, ... }
@@ -127,7 +139,8 @@ function factFile(url, groups = null) {
 
 /**
  * { '1.1': { today: { slots: [{ start: 0, end: 210, type: 'Definite' | 'NotPlanned' }], date, status },
- *            tomorrow: {...}, updatedOn } }  — minutes since midnight; status 'WaitingForSchedule' = not out yet.
+ *            tomorrow: {...}, updatedOn } }  — minutes since midnight; status 'WaitingForSchedule' = not out yet,
+ * 'EmergencyShutdowns' = emergency outages ordered by Ukrenergo, the schedule does not apply (no slots).
  */
 function yasno(regionId, dsoId) {
   return {
@@ -135,18 +148,21 @@ function yasno(regionId, dsoId) {
     async load(fetchText) {
       const answer = JSON.parse(await fetchText(YASNO(regionId, dsoId), 'application/json'));
       const data = {};
+      const emergencyDates = new Set();
       let updated = 0;
       for (const [name, group] of Object.entries(answer)) {
         if (!/^\d+\.\d+$/.test(name) || !group) continue;
         updated = Math.max(updated, Date.parse(group.updatedOn) || 0);
         for (const day of [group.today, group.tomorrow]) {
           if (!day || !day.date || day.status === 'WaitingForSchedule') continue;
+          if (day.status === 'EmergencyShutdowns') { emergencyDates.add(day.date.slice(0, 10)); continue; }
           const key = kyivMidnight(day.date.slice(0, 10));
           const halves = Array.from({ length: 48 }, (_, i) => slotTypeAt(day.slots, i * 30 + 15));
           (data[key] = data[key] || {})['GPV' + name] = hoursFromHalves(halves.map(t => (t === 'Definite' ? 'off' : t && t !== 'NotPlanned' ? 'maybe' : 'on')));
         }
       }
-      return { data, update: updated ? formatKyiv(updated) : null };
+      const emergency = emergencyDates.size ? { dates: [...emergencyDates], message: EMERGENCY_MESSAGE } : null;
+      return { data, update: updated ? formatKyiv(updated) : null, emergency };
     },
   };
 }
@@ -168,9 +184,11 @@ function hoursFromHalves(halves) {
   return hours;
 }
 
+const EMERGENCY_MESSAGE = 'За наказом НЕК Укренерго застосовані екстрені відключення. Графіки відключень при цьому не діють.';
+
 function factOf(fact) {
   if (!fact || typeof fact.data !== 'object') throw new Error('Invalid data structure');
-  return { data: fact.data, update: fact.update ?? null };
+  return { data: fact.data, update: fact.update ?? null, emergency: null };
 }
 
 function botProtection() {
@@ -187,15 +205,17 @@ function isBotProtection(html) {
 // ── Days and groups ──
 
 // Day keys are unix seconds of the day's start (some sources use UTC midnight, so the day is read
-// a few hours later); only today and tomorrow are kept, keyed by Kyiv midnight
+// a few hours later); only today and tomorrow are kept, keyed by Kyiv midnight. A day of emergency
+// outages has no schedule: whatever a source still lists for it does not apply.
 function keepTodayAndTomorrow(fact, groups) {
   const today = kyivDate(Date.now());
   const tomorrow = kyivDate(Date.now() + 26 * 3_600_000 - msSinceKyivMidnight());
+  const emergencyDates = fact.emergency ? fact.emergency.dates : [];
   const data = {};
   for (const [key, dayGroups] of Object.entries(fact.data || {})) {
     if (!dayGroups || typeof dayGroups !== 'object') continue;
     const day = kyivDate(Number(key) * 1000 + 6 * 3_600_000);
-    if (day !== today && day !== tomorrow) continue;
+    if (day !== today && day !== tomorrow || emergencyDates.includes(day)) continue;
     const renamed = {};
     for (const [group, hours] of Object.entries(dayGroups)) {
       const name = groups ? groups(group) : group;
@@ -203,7 +223,12 @@ function keepTodayAndTomorrow(fact, groups) {
     }
     data[kyivMidnight(day)] = renamed;
   }
-  return { data, today: kyivMidnight(today), update: fact.update };
+  const emergency = {
+    today: emergencyDates.includes(today),
+    tomorrow: emergencyDates.includes(tomorrow),
+    message: fact.emergency ? fact.emergency.message : null,
+  };
+  return { data, today: kyivMidnight(today), update: fact.update, emergency };
 }
 
 // ── Kyiv time ──

@@ -150,6 +150,9 @@ const TRANSLATIONS = {
     updatedAt: 'оновлено',
     notPublished: 'Графік ще не опубліковано',
     notPublishedToday: 'Графік на сьогодні ще не опубліковано',
+    emergency: 'Екстрені відключення',
+    emergencyText: 'За наказом НЕК Укренерго застосовані екстрені відключення. Графіки відключень при цьому не діють.',
+    emergencyNote: 'Графік повернеться, щойно ДТЕК його відновить.',
     addressNoPower: 'За адресою зараз немає світла',
     plannedRepairs: 'Планові ремонтні роботи',
     since: 'з',
@@ -199,6 +202,9 @@ const TRANSLATIONS = {
     updatedAt: 'updated',
     notPublished: 'Schedule not published yet',
     notPublishedToday: 'Today\'s schedule is not published yet',
+    emergency: 'Emergency outages',
+    emergencyText: 'Ukrenergo ordered emergency outages. Outage schedules do not apply.',
+    emergencyNote: 'The schedule returns as soon as DTEK restores it.',
     addressNoPower: 'No power at the address now',
     plannedRepairs: 'Planned repair works',
     since: 'since',
@@ -243,6 +249,7 @@ let state = {
   currentRawData: null,
   todayKey: null,
   updatedAt: null, // DTEK's own 'last update' text, e.g. '17.10.2026 16:27'
+  emergency: { today: false, tomorrow: false, message: null }, // emergency outages: no schedule applies
   loading: false,
 };
 
@@ -796,10 +803,12 @@ async function startUpdate() {
       state.currentRawData = data.rawFact;
       state.todayKey       = data.today != null ? String(data.today) : null;
       state.updatedAt      = data.update || null;
+      state.emergency      = data.emergency || { today: false, tomorrow: false, message: null };
       rememberGroups(state.region, data.rawFact);
       updateInterface();
       postPowerTimeline();
       checkAddress();
+      checkEmergencyNotice();
     } else if (data.status === 'protected') {
       setError(t('botProtection'));
     } else {
@@ -832,6 +841,7 @@ function setRefreshSpinner(on) {
 function postPowerTimeline(failed = false) {
   if (!DESKTOP) return;
   if (failed) { postToApp('status:'); return; }
+  if (state.emergency.today && !currentAddressOutage()) { postToApp('status:emergency'); return; }
   let points = [];
   let end = 0;
   const raw = state.currentRawData;
@@ -883,6 +893,21 @@ function scheduleDays() {
   const today = state.todayKey && raw[state.todayKey] ? state.todayKey : null;
   const tomorrow = days.find(day => Number(day) > Number(state.todayKey || 0)) || null;
   return [today, tomorrow];
+}
+
+// ── Emergency outages announced on the DTEK page (desktop app) ──
+// The page's pop-up says so ('введені екстрені відключення ... Графіки ... не діють'); the server
+// often cannot read the page (bot protection) and the copies of the schedule do not carry it.
+async function checkEmergencyNotice() {
+  const region = state.region;
+  if (!DESKTOP || state.emergency.today || !(regionById(region) && regionById(region).lookup)) return;
+  try {
+    const notice = await askSite(region, { op: 'notice' });
+    if (region !== state.region || !notice.emergency) return;
+    state.emergency = { ...state.emergency, today: true, message: notice.message };
+  } catch { return; }
+  if (state.currentRawData) updateInterface();
+  postPowerTimeline();
 }
 
 // ── Current outage at the saved address (desktop app, DTEK regions) ──
@@ -1007,12 +1032,15 @@ function updateInterface() {
     dateEl.innerText = `${t('scheduleFor')} ${dd.toLocaleDateString(currentLang === 'ua' ? 'uk-UA' : 'en-US')}${updated}`;
   }
 
-  // What DTEK reports for the saved address now beats the schedule
+  // What DTEK reports for the saved address now beats the schedule; during emergency outages
+  // there is no schedule to go by, unless DTEK reports the address itself
   const noScheduleToday = !todayRaw;
-  const outNow = currentAddressOutage() ? true : todayGrid[ch] === '1';
+  const addressOff = !!currentAddressOutage();
+  const emergencyNow = !addressOff && state.emergency.today;
+  const outNow = addressOff || (!emergencyNow && todayGrid[ch] === '1');
   const statusEl = document.getElementById('dw-status-text');
-  if (statusEl) statusEl.innerText = outNow ? t('noLight') : t('hasLight');
-  const accent = outNow ? '#ff4444' : '#00ff88';
+  if (statusEl) statusEl.innerText = emergencyNow ? t('emergency') : outNow ? t('noLight') : t('hasLight');
+  const accent = emergencyNow ? '#ff9f1a' : outNow ? '#ff4444' : '#00ff88';
   renderAddressBox();
   const dot = document.getElementById('dw-dot');
   if (dot) {
@@ -1021,7 +1049,22 @@ function updateInterface() {
   }
   const container = document.getElementById('dw-container');
   if (container) {
-    container.style.borderColor = outNow ? 'rgba(255,68,68,0.5)' : 'rgba(0,255,136,0.5)';
+    container.style.borderColor = emergencyNow ? 'rgba(255,159,26,0.6)' : outNow ? 'rgba(255,68,68,0.5)' : 'rgba(0,255,136,0.5)';
+  }
+
+  // The day of emergency outages: DTEK's own words instead of the hours
+  if (state.selectedDay === 1 ? state.emergency.tomorrow : state.emergency.today) {
+    const gridRoot = document.getElementById('dw-grid-root');
+    if (gridRoot) {
+      const box = document.createElement('div');
+      box.className = 'dw-emergency';
+      const title = Object.assign(document.createElement('div'), { className: 'dw-emergency-title', textContent: `⚠ ${t('emergency')}` });
+      const text = Object.assign(document.createElement('div'), { textContent: state.emergency.message || t('emergencyText') });
+      const note = Object.assign(document.createElement('div'), { className: 'dw-emergency-note', textContent: t('emergencyNote') });
+      box.append(title, text, note);
+      gridRoot.replaceChildren(box);
+    }
+    return;
   }
 
   // Tomorrow without outages is not published yet; today without a schedule has none at all

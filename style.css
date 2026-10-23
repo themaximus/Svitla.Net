@@ -594,3 +594,18 @@ html.desktop .dw-container.blur-on {
 .dw-address-alert { font-weight: 800; color: #ff8080; }.dw-container.compact .dw-status-section { margin-bottom: 12px; }
 .dw-container.compact .dw-schedule-col { gap: 4px; }
 .dw-container.compact .dw-schedule-row { padding: 6px 12px; }
+
+/* Emergency outages: no schedule applies, DTEK's notice instead */
+.dw-emergency {
+  grid-column: 1 / span 2;
+  align-self: center;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255,159,26,0.1);
+  border: 1px solid rgba(255,159,26,0.45);
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.88);
+}
+.dw-emergency-title { font-weight: 800; font-size: 15px; color: #ffb547; margin-bottom: 8px; }
+.dw-emergency-note { margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.5); }

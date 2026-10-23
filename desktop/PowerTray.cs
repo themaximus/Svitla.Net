@@ -30,7 +30,7 @@ sealed class PowerTray : IDisposable
     // Points where the power state changes: (unix ms, power off), sorted; the schedule ends at timelineEnd
     readonly List<KeyValuePair<long, bool>> timeline = new List<KeyValuePair<long, bool>>();
     long timelineEnd;
-    enum Schedule { Loading, Unavailable, Received }
+    enum Schedule { Loading, Unavailable, Received, Emergency }
     Schedule schedule = Schedule.Loading;
     bool english, widgetVisible = true;
     Icon shownIcon;
@@ -67,14 +67,14 @@ sealed class PowerTray : IDisposable
 
     /// <summary>
     /// "end|time,off;time,off;..." from the page; "0|" when nothing is published for the group,
-    /// "" when the schedule could not be loaded.
+    /// "" when the schedule could not be loaded, "emergency" during emergency outages (no schedule applies).
     /// </summary>
     public void SetTimeline(string message)
     {
         timeline.Clear();
         timelineEnd = 0;
-        schedule = message.Length == 0 ? Schedule.Unavailable : Schedule.Received;
-        if (schedule == Schedule.Unavailable) { Refresh(); return; }
+        schedule = message.Length == 0 ? Schedule.Unavailable : message == "emergency" ? Schedule.Emergency : Schedule.Received;
+        if (schedule != Schedule.Received) { Refresh(); return; }
         try
         {
             string[] parts = message.Split('|');
@@ -104,7 +104,13 @@ sealed class PowerTray : IDisposable
         string head, next;
         Icon icon;
 
-        if (current < 0 || now >= timelineEnd)
+        if (schedule == Schedule.Emergency)
+        {
+            icon = appIcon;
+            head = T("Екстрені відключення", "Emergency outages");
+            next = T("Графіки відключень не діють", "Outage schedules do not apply");
+        }
+        else if (current < 0 || now >= timelineEnd)
         {
             icon = appIcon;
             head = Program.AppName;

@@ -21,7 +21,7 @@ app.use(express.static(path.join(__dirname)));
 
 app.get('/api/regions', (_, res) => res.json(regionList()));
 
-// { status: 'success', rawFact, today, update, source } | { status: 'protected' | 'error', message }
+// { status: 'success', rawFact, today, update, source, emergency } | { status: 'protected' | 'error', message }
 app.get('/api/schedule', async (req, res) => {
   const regionId = String(req.query.region || '');
   if (!REGIONS_BY_ID.has(regionId)) {
@@ -49,6 +49,7 @@ function getSchedule(regionId) {
     .then(loaded => {
       const result = loaded.status !== 'success' ? loaded : {
         status: 'success', rawFact: loaded.fact.data, today: loaded.fact.today, update: loaded.fact.update, source: loaded.source,
+        emergency: loaded.fact.emergency, // { today, tomorrow, message }: emergency outages, the schedule does not apply
       };
       if (result.status === 'success') cache.set(regionId, { time: Date.now(), result });
       return result;
