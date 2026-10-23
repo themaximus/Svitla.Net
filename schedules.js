@@ -26,7 +26,7 @@ const cekOnly = group => { const m = group.match(CEK_GROUP); return m ? 'GPV' + 
 
 /** In the widget's order. lookup: the DTEK page whose address form finds the group of an address. */
 const REGIONS = [
-  region('dnem', 'Дніпро та область', 'Dnipro & Region', 'Дніпро', 'Dnipro', {
+  region('dnem', 'Дніпро та область (ДТЕК)', 'Dnipro & Region (DTEK)', 'Дніпро', 'Dnipro', {
     lookup: DTEK('dnem'),
     sources: [dtekPage(DTEK('dnem'), dniproOnly), yasno(3, 301), factFile(OUTAGE_DATA_UA + 'dnipro.json', dniproOnly)],
   }),
@@ -34,19 +34,19 @@ const REGIONS = [
     lookup: DTEK('dnem'),
     sources: [yasno(3, 303), dtekPage(DTEK('dnem'), cekOnly), factFile(OUTAGE_DATA_UA + 'dnipro.json', cekOnly)],
   }),
-  region('kem', 'Київ (місто)', 'Kyiv (City)', 'Київ', 'Kyiv', {
+  region('kem', 'Київ (місто, ДТЕК)', 'Kyiv (City, DTEK)', 'Київ', 'Kyiv', {
     lookup: DTEK('kem'),
     sources: [dtekPage(DTEK('kem')), yasno(25, 902), factFile(OUTAGE_DATA_UA + 'kyiv.json')],
   }),
-  region('krem', 'Київська обл.', 'Kyiv Region', 'Київ обл.', 'Kyiv Reg.', {
+  region('krem', 'Київська обл. (ДТЕК)', 'Kyiv Region (DTEK)', 'Київ обл.', 'Kyiv Reg.', {
     lookup: DTEK('krem'),
     sources: [dtekPage(DTEK('krem')), factFile(OUTAGE_DATA_UA + 'kyiv-region.json')],
   }),
-  region('oem', 'Одеська обл.', 'Odesa Region', 'Одеса', 'Odesa', {
+  region('oem', 'Одеська обл. (ДТЕК)', 'Odesa Region (DTEK)', 'Одеса', 'Odesa', {
     lookup: DTEK('oem'),
     sources: [dtekPage(DTEK('oem')), factFile(OUTAGE_DATA_UA + 'odesa.json')],
   }),
-  region('dem', 'Донецька обл.', 'Donetsk Region', 'Донецьк', 'Donetsk', {
+  region('dem', 'Донецька обл. (ДТЕК)', 'Donetsk Region (DTEK)', 'Донецьк', 'Donetsk', {
     lookup: DTEK('dem'),
     sources: [dtekPage(DTEK('dem'))],
   }),
