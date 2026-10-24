@@ -116,7 +116,7 @@ sealed class PowerTray : IDisposable
             head = Program.AppName;
             next = schedule == Schedule.Loading     ? T("Графік завантажується…", "Loading the schedule…")
                  : schedule == Schedule.Unavailable ? T("Графік недоступний", "Schedule unavailable")
-                 : T("Графік на сьогодні ще не опубліковано", "Today's schedule is not published yet");
+                 : T("Відключень немає або графік не опубліковано", "No outages, or no schedule published");
         }
         else
         {
