@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The glass card with an amber tint during emergency outages.
+     Apple-style glass as far as a home screen widget allows: the launcher draws widgets, so the wallpaper
+     behind cannot be blurred. Translucent layers, a sheen along the top and a light edge give the look. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Dims the wallpaper enough for white text on any picture -->
+    <item><shape android:shape="rectangle"><solid android:color="#47121A22" /><corners android:radius="24dp" /></shape></item>
+    <!-- The glass, with the state's tint -->
+    <item><shape android:shape="rectangle">
+        <gradient android:angle="315" android:startColor="#55FF9F1A" android:endColor="#1FFF9F1A" />
+        <corners android:radius="24dp" />
+    </shape></item>
+    <!-- The sheen along the top -->
+    <item android:gravity="top" android:height="44dp"><shape android:shape="rectangle">
+        <gradient android:angle="270" android:startColor="#38FFFFFF" android:endColor="#00FFFFFF" />
+        <corners android:topLeftRadius="24dp" android:topRightRadius="24dp" />
+    </shape></item>
+    <!-- The light edge -->
+    <item><shape android:shape="rectangle">
+        <solid android:color="#00000000" />
+        <stroke android:width="1dp" android:color="#99FFD28A" />
+        <corners android:radius="24dp" />
+    </shape></item>
+</layer-list>

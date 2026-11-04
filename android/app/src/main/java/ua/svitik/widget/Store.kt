@@ -35,12 +35,23 @@ class Store(context: Context) {
 
     val loadedAt: Long get() = prefs.getLong("loadedAt", 0)
 
+    /** True at most once per interval: three widgets update together but need one download. */
+    fun claimDownload(intervalMs: Long): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong("downloadClaimedAt", 0) < intervalMs) return false
+        prefs.edit().putLong("downloadClaimedAt", now).commit()
+        return true
+    }
+
     var lastError: String?
         get() = prefs.getString("error", null)
         set(value) = prefs.edit().putString("error", value).apply()
 
     private fun encode(schedule: Schedule) = JSONObject().apply {
         put("updated", schedule.updated)
+        put("savedOn", LocalDate.now(KYIV).toString())
+        put("emergencyToday", schedule.emergencyToday)
+        put("emergencyTomorrow", schedule.emergencyTomorrow)
         put("today", encodeDays(schedule.today))
         put("tomorrow", encodeDays(schedule.tomorrow))
     }
@@ -55,10 +66,15 @@ class Store(context: Context) {
     private fun decode(json: JSONObject): Schedule {
         val days = decodeDays(json.getJSONObject("today")) + decodeDays(json.getJSONObject("tomorrow"))
         val now = LocalDate.now(KYIV)
+        // After midnight yesterday's "tomorrow" is today; an older mark says nothing any more
+        val savedOn = runCatching { LocalDate.parse(json.optString("savedOn")) }.getOrNull()
+        val emergencyToday = if (savedOn == now) json.optBoolean("emergencyToday") else savedOn == now.minusDays(1) && json.optBoolean("emergencyTomorrow")
         return Schedule(
             days.filter { it.second.date == now }.toMap(),
             days.filter { it.second.date == now.plusDays(1) }.toMap(),
             json.optString("updated").takeIf { it.isNotEmpty() && it != "null" },
+            emergencyToday,
+            savedOn == now && json.optBoolean("emergencyTomorrow"),
         )
     }
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Emergency outages: whether there is power is not known -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFB547" android:pathData="M14,1 L4,13.5 L10.5,13.5 L9,23 L20,9.5 L13.5,9.5 Z" />
+</vector>

@@ -1,10 +1,12 @@
 package ua.svitik.widget
 
+import android.app.ActivityManager
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -16,16 +18,20 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
- * Keeps the schedule fresh and the widgets current:
- * - the schedule is downloaded every 30 minutes (WorkManager, only with a network) and on demand;
- * - the widgets are redrawn from the stored schedule at the next power change and every half hour,
- *   so the status and the "now" mark move without a download (an inexact alarm, no special permission).
+ * Keeps the schedule fresh and the widgets current, by three independent routes:
+ * - the launcher's own widget update every 30 minutes (updatePeriodMillis). It is the only route that
+ *   still works when Android has the app's battery use set to "Restricted": that setting holds back
+ *   the app's jobs and alarms until it is opened, but not this system broadcast;
+ * - WorkManager downloads the schedule every 30 minutes;
+ * - an alarm redraws the widgets at the next power change and every half hour (no download).
  */
 object Refresher {
     private const val PERIODIC = "refresh-periodic"
     private const val NOW = "refresh-now"
+    private const val STALE_MS = 25 * 60_000L
 
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(30, TimeUnit.MINUTES)
@@ -58,6 +64,22 @@ object Refresher {
         }
     }
 
+    /** The launcher's update of a widget: redraw at once, download if the schedule is old, re-arm the alarm. */
+    fun onSystemUpdate(context: Context, pending: BroadcastReceiver.PendingResult) {
+        redraw(context)
+        if (!Store(context).claimDownload(STALE_MS)) {
+            pending.finish()
+            return
+        }
+        thread {
+            try {
+                download(context)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
     /** Redraws the widgets and sets the alarm for the next redraw. */
     fun redraw(context: Context) {
         Widgets.updateAll(context)
@@ -70,6 +92,11 @@ object Refresher {
         alarms.setAndAllowWhileIdle(AlarmManager.RTC, at.toInstant().toEpochMilli() + 5_000, tickIntent(context))
     }
 
+    /** Android's "Restricted" battery setting for this app: its jobs and alarms wait until it is opened. */
+    fun isBackgroundRestricted(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            context.getSystemService(ActivityManager::class.java).isBackgroundRestricted
+
     private fun tickIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
         context, 0, Intent(context, TickReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -80,7 +107,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : Worker(context
     override fun doWork(): Result = if (Refresher.download(applicationContext)) Result.success() else Result.retry()
 }
 
-/** The alarm of Refresher.redraw: no download, just the widgets for the new time. */
+/** The alarm of Refresher.redraw, a restart, an app update or a clock change: redraw and re-arm, no download. */
 class TickReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Refresher.redraw(context)

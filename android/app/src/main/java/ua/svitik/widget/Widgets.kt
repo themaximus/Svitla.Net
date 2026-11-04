@@ -30,6 +30,7 @@ abstract class BaseWidget(val layout: Int) : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         Widgets.update(context, this::class.java, ids)
         Refresher.schedule(context)
+        Refresher.onSystemUpdate(context, goAsync())
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
@@ -67,21 +68,40 @@ object Widgets {
         for (id in ids) {
             val views = RemoteViews(context.packageName, layout)
             views.setOnClickPendingIntent(R.id.root, openApp(context))
-            views.setInt(R.id.root, "setBackgroundResource", if (power.off) R.drawable.widget_bg_off else R.drawable.widget_bg_on)
-            views.setImageViewResource(R.id.bolt, if (power.off) R.drawable.ic_bolt_off else R.drawable.ic_bolt_on)
-            views.setTextViewText(R.id.status, context.getString(if (power.off) R.string.power_off else R.string.power_on))
+            views.setInt(R.id.root, "setBackgroundResource", cardBackground(power))
+            views.setImageViewResource(R.id.bolt, boltIcon(power))
+            views.setTextViewText(R.id.status, context.getString(statusText(power)))
             views.setTextViewText(R.id.next, nextText(context, schedule, group, power, now))
             views.setTextViewText(R.id.label, if (group == null) context.getString(R.string.choose_group) else "${store.region.short} · $group")
 
             when (layout) {
                 R.layout.widget_strip -> views.setImageViewBitmap(R.id.bar, dayBar(schedule?.today?.get(group), now))
-                R.layout.widget_day -> fillHours(context, views, schedule?.today?.get(group), now)
+                R.layout.widget_day -> fillHours(context, views, schedule?.today?.get(group), now, power)
             }
             manager.updateAppWidget(id, views)
         }
     }
 
+    fun cardBackground(power: PowerNow) = when {
+        power.emergency -> R.drawable.widget_bg_warn
+        power.off -> R.drawable.widget_bg_off
+        else -> R.drawable.widget_bg_on
+    }
+
+    fun boltIcon(power: PowerNow) = when {
+        power.emergency -> R.drawable.ic_bolt_warn
+        power.off -> R.drawable.ic_bolt_off
+        else -> R.drawable.ic_bolt_on
+    }
+
+    fun statusText(power: PowerNow) = when {
+        power.emergency -> R.string.emergency
+        power.off -> R.string.power_off
+        else -> R.string.power_on
+    }
+
     fun nextText(context: Context, schedule: Schedule?, group: String?, power: PowerNow, now: ZonedDateTime): String = when {
+        power.emergency -> context.getString(R.string.emergency_note)
         schedule == null || group == null -> context.getString(R.string.no_data)
         !power.known -> context.getString(R.string.not_published_today)
         power.changeAt == null -> context.getString(if (power.off) R.string.back_unknown else R.string.no_outages)
@@ -126,9 +146,10 @@ object Widgets {
     }
 
     // Two columns of 12 rows, as on the desktop: "00-01" and the indicator of the hour
-    private fun fillHours(context: Context, views: RemoteViews, day: DaySchedule?, now: ZonedDateTime) {
+    private fun fillHours(context: Context, views: RemoteViews, day: DaySchedule?, now: ZonedDateTime, power: PowerNow) {
         views.removeAllViews(R.id.column_left)
         views.removeAllViews(R.id.column_right)
+        views.setTextViewText(R.id.no_schedule, context.getString(if (power.emergency) R.string.emergency_text else R.string.not_published_today))
         views.setViewVisibility(R.id.no_schedule, if (day == null) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.hours, if (day == null) View.GONE else View.VISIBLE)
         if (day == null) return

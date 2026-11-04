@@ -5,14 +5,14 @@
     <color name="green">#FF00FF88</color>
     <color name="red">#FFFF4444</color>
     <color name="text">#FFFFFFFF</color>
-    <color name="text_dim">#99FFFFFF</color>
+    <color name="text_dim">#B3FFFFFF</color>
     <color name="row">#9E080E14</color>
     <color name="row_now">#D1233643</color>
 
     <style name="Theme.Svitik" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowBackground">@drawable/app_bg</item>
+        <item name="android:statusBarColor">#FF0F2A33</item>
+        <item name="android:navigationBarColor">#FF0A1216</item>
         <item name="android:colorAccent">@color/green</item>
         <item name="android:textColorPrimary">@color/text</item>
     </style>

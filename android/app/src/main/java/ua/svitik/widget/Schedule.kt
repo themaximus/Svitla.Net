@@ -28,6 +28,8 @@ class Schedule(
     val today: Map<String, DaySchedule>,      // group ("3.1") -> today
     val tomorrow: Map<String, DaySchedule>,   // only once published
     val updated: String?,                     // DTEK's own update time, e.g. "23.10.2026 03:00"
+    val emergencyToday: Boolean = false,      // emergency outages: no schedule applies
+    val emergencyTomorrow: Boolean = false,
 ) {
     val groups: List<String> = (today.keys + tomorrow.keys).toSortedSet(compareBy<String>({ it.substringBefore('.').toInt() }, { it })).toList()
 }
@@ -59,6 +61,12 @@ val REGIONS = listOf(
     Region("oem", "Одеська обл. (ДТЕК)", "Одеса", listOf(dtekCopy("odesa.json"))),
 )
 
+/** Groups to choose from: those in the schedule, or the usual ones while nothing is published. */
+fun selectableGroups(schedule: Schedule?, current: String?): List<String> {
+    val groups = schedule?.groups.orEmpty().ifEmpty { (1..6).flatMap { listOf("$it.1", "$it.2") } }
+    return if (current != null && current !in groups) listOf(current) + groups else groups
+}
+
 fun regionById(id: String?): Region = REGIONS.firstOrNull { it.id == id } ?: REGIONS.first()
 
 /** The first source with today's schedule; failing that, the first one that answered at all. */
@@ -68,7 +76,7 @@ fun loadSchedule(region: Region): Schedule {
     for (source in region.sources) {
         try {
             val schedule = source.load()
-            if (schedule.today.isNotEmpty()) return schedule
+            if (schedule.today.isNotEmpty() || schedule.emergencyToday) return schedule
             if (answered == null) answered = schedule
         } catch (e: Exception) {
             if (error == null) error = e
@@ -78,13 +86,17 @@ fun loadSchedule(region: Region): Schedule {
 }
 
 // ── YASNO: { "1.1": { today: { slots: [{ start, end, type }], date, status }, tomorrow: {...}, updatedOn } }
-// slots in minutes since midnight; type "Definite" = no power; status "WaitingForSchedule" = not published yet
+// slots in minutes since midnight; type "Definite" = no power; status "WaitingForSchedule" = not published yet,
+// "EmergencyShutdowns" = emergency outages ordered by Ukrenergo, schedules do not apply
 
 private fun yasno(regionId: Int, dsoId: Int) = Source {
     val answer = JSONObject(httpGet(yasnoUrl(regionId, dsoId)))
     val today = mutableMapOf<String, DaySchedule>()
     val tomorrow = mutableMapOf<String, DaySchedule>()
     var updated: Instant? = null
+    var emergencyToday = false
+    var emergencyTomorrow = false
+    val nowDate = LocalDate.now(KYIV)
     for (group in answer.keys()) {
         if (!Regex("""^\d+\.\d+$""").matches(group)) continue
         val entry = answer.optJSONObject(group) ?: continue
@@ -95,6 +107,11 @@ private fun yasno(regionId: Int, dsoId: Int) = Source {
             val day = entry.optJSONObject(key) ?: continue
             if (day.optString("status") == "WaitingForSchedule") continue
             val date = runCatching { LocalDate.parse(day.optString("date").take(10)) }.getOrNull() ?: continue
+            if (day.optString("status") == "EmergencyShutdowns") {
+                if (date == nowDate) emergencyToday = true
+                if (date == nowDate.plusDays(1)) emergencyTomorrow = true
+                continue
+            }
             val slots = day.optJSONArray("slots")
             val halves = List(48) { i ->
                 val minute = i * 30 + 15
@@ -114,7 +131,7 @@ private fun yasno(regionId: Int, dsoId: Int) = Source {
             place(DaySchedule(date, halves), group, today, tomorrow)
         }
     }
-    Schedule(today, tomorrow, updated?.let { formatKyiv(it) })
+    Schedule(today, tomorrow, updated?.let { formatKyiv(it) }, emergencyToday, emergencyTomorrow)
 }
 
 // ── The DTEK pages' DisconSchedule.fact, copied by outage-data-ua:
@@ -163,8 +180,8 @@ private fun place(day: DaySchedule, group: String, today: MutableMap<String, Day
 
 private fun httpGet(url: String): String {
     val connection = URL(url).openConnection() as HttpURLConnection
-    connection.connectTimeout = 15_000
-    connection.readTimeout = 15_000
+    connection.connectTimeout = 10_000
+    connection.readTimeout = 10_000
     connection.setRequestProperty("Accept", "application/json")
     connection.setRequestProperty("User-Agent", "SvitikWidget/1.0 (Android)")
     try {
@@ -184,10 +201,12 @@ class PowerNow(
     val known: Boolean,          // there is a schedule for today
     val off: Boolean,
     val changeAt: ZonedDateTime?, // null: no change in the published schedule
+    val emergency: Boolean = false, // emergency outages: whether there is power is not known
 )
 
 /** State of the group now and the next change, over today and (if published) tomorrow. */
 fun powerNow(schedule: Schedule?, group: String?, now: ZonedDateTime = ZonedDateTime.now(KYIV)): PowerNow {
+    if (schedule?.emergencyToday == true) return PowerNow(false, false, null, emergency = true)
     val today = schedule?.today?.get(group) ?: return PowerNow(false, false, null)
     val days = listOfNotNull(today, schedule.tomorrow[group])
     val start = now.toLocalDate().atStartOfDay(KYIV)
