@@ -19,17 +19,18 @@ import android.widget.Toast
 import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 
-/** The app, one page per tab: the status now, the day's schedule, the widgets and the settings. */
+/** The app, one page per tab: the day's schedule (the main one), the status now, the widgets and the settings. */
 class MainActivity : Activity() {
     private lateinit var store: Store
     private val background = Executors.newSingleThreadExecutor()
     private var showTomorrow = false
     private var groups: List<String> = emptyList()
+    private var backdropAccent: Int? = null
 
     // Tab button -> its page
     private val tabs = listOf(
-        R.id.tab_now to R.id.page_now,
         R.id.tab_schedule to R.id.page_schedule,
+        R.id.tab_now to R.id.page_now,
         R.id.tab_widgets to R.id.page_widgets,
         R.id.tab_settings to R.id.page_settings,
     )
@@ -40,7 +41,7 @@ class MainActivity : Activity() {
         store = Store(this)
 
         for ((tab, _) in tabs) findViewById<View>(tab).setOnClickListener { selectTab(tab) }
-        selectTab(savedInstanceState?.getInt(STATE_TAB) ?: R.id.tab_now)
+        selectTab(savedInstanceState?.getInt(STATE_TAB) ?: R.id.tab_schedule)
 
         val regions = findViewById<Spinner>(R.id.region)
         regions.adapter = ArrayAdapter(this, R.layout.spinner_item, REGIONS.map { it.name }).apply {
@@ -118,14 +119,26 @@ class MainActivity : Activity() {
         val group = store.group
         val now = ZonedDateTime.now(KYIV)
         val power = powerNow(schedule, group, now)
+        renderBackdrop(Glow.accent(power))
         renderNow(schedule, group, power, now)
         renderSchedule(schedule, group, power, now)
         renderSettings(schedule, group)
     }
 
+    // The rings take the colour of the power state; redrawn only when it changes
+    private fun renderBackdrop(accent: Int) {
+        if (accent == backdropAccent) return
+        backdropAccent = accent
+        findViewById<View>(R.id.root).background = Glow.background(this, accent)
+    }
+
     private fun renderNow(schedule: Schedule?, group: String?, power: PowerNow, now: ZonedDateTime) {
         findViewById<ImageView>(R.id.bolt).setImageResource(Widgets.boltIcon(power))
-        findViewById<View>(R.id.card).setBackgroundResource(Widgets.cardBackground(power))
+        findViewById<View>(R.id.card).setBackgroundResource(when {
+            power.emergency -> R.drawable.glass_card_warn
+            power.off -> R.drawable.glass_card_off
+            else -> R.drawable.glass_card_on
+        })
         findViewById<TextView>(R.id.status).setText(Widgets.statusText(power))
         findViewById<TextView>(R.id.next).text = Widgets.nextText(this, schedule, group, power, now)
         findViewById<TextView>(R.id.label).text = if (group == null) getString(R.string.choose_group) else "${store.region.short} · ${getString(R.string.group_n, group)}"

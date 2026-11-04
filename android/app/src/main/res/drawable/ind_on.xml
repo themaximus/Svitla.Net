@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An hour of the schedule: white = power, striped = no power (per half hour), amber = possible outage -->
+<!-- An hour of the schedule: green = power, red stripes = no power (per half hour), amber = possible outage -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="34dp" android:height="16dp" android:viewportWidth="34" android:viewportHeight="16">
   <clip-path android:pathData="M6,0 L28,0 A6,6 0 0 1 34,6 L34,10 A6,6 0 0 1 28,16 L6,16 A6,6 0 0 1 0,10 L0,6 A6,6 0 0 1 6,0 Z"/>
-  <path android:fillColor="#FFFFFF" android:pathData="M0,0 L34,0 L34,16 L0,16 Z"/>
+  <path android:fillColor="#00FF88" android:pathData="M0,0 L34,0 L34,16 L0,16 Z"/>
 </vector>

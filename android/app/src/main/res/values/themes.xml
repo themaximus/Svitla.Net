@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg">#FF08090C</color>
-    <color name="card">#FF0D1F18</color>
+    <color name="card">#FF000000</color>
     <color name="green">#FF00FF88</color>
     <color name="red">#FFFF4444</color>
     <color name="text">#FFFFFFFF</color>
@@ -10,9 +10,9 @@
     <color name="row_now">#D1233643</color>
 
     <style name="Theme.Svitik" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@drawable/app_bg</item>
-        <item name="android:statusBarColor">#FF0F2A33</item>
-        <item name="android:navigationBarColor">#FF0A1216</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">#FF000000</item>
+        <item name="android:navigationBarColor">#FF000000</item>
         <item name="android:colorAccent">@color/green</item>
         <item name="android:textColorPrimary">@color/text</item>
     </style>

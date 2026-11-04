@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The app: one page per tab, the glass tab bar below -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
@@ -32,7 +33,7 @@
                     <TextView android:id="@+id/error" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="#FFB0B0" android:textSize="12sp" android:visibility="gone" />
                 </LinearLayout>
 
-                <LinearLayout android:id="@+id/restricted_card" style="@style/Card" android:layout_marginTop="12dp" android:background="@drawable/widget_bg_warn" android:visibility="gone">
+                <LinearLayout android:id="@+id/restricted_card" style="@style/Card" android:layout_marginTop="12dp" android:background="@drawable/glass_card_warn" android:visibility="gone">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/restricted_title" android:textColor="@color/text" android:textSize="15sp" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/restricted_text" android:textColor="@color/text" android:textSize="13sp" />
                     <Button android:id="@+id/open_battery" style="@style/AppButton" android:text="@string/restricted_button" />
@@ -81,9 +82,9 @@
             <LinearLayout style="@style/PageContent">
                 <TextView style="@style/PageTitle" android:text="@string/tab_settings" />
                 <TextView style="@style/SectionTitle" android:layout_marginTop="4dp" android:text="@string/region" />
-                <Spinner android:id="@+id/region" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/button_bg" android:paddingHorizontal="10dp" />
+                <Spinner android:id="@+id/region" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/spinner_bg" android:paddingHorizontal="12dp" />
                 <TextView style="@style/SectionTitle" android:text="@string/group" />
-                <Spinner android:id="@+id/group" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/button_bg" android:paddingHorizontal="10dp" />
+                <Spinner android:id="@+id/group" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/spinner_bg" android:paddingHorizontal="12dp" />
                 <Button android:id="@+id/refresh" style="@style/AppButton" android:layout_marginTop="16dp" android:text="@string/refresh" />
                 <TextView style="@style/SectionTitle" android:text="@string/background_title" />
                 <TextView android:id="@+id/background_state" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text" android:textSize="13sp" />
@@ -101,8 +102,8 @@
         android:background="@drawable/tab_bar_bg"
         android:orientation="horizontal"
         android:padding="5dp">
-        <TextView android:id="@+id/tab_now" style="@style/Tab" android:text="@string/tab_now" />
         <TextView android:id="@+id/tab_schedule" style="@style/Tab" android:text="@string/tab_schedule" />
+        <TextView android:id="@+id/tab_now" style="@style/Tab" android:text="@string/tab_now" />
         <TextView android:id="@+id/tab_widgets" style="@style/Tab" android:text="@string/tab_widgets" />
         <TextView android:id="@+id/tab_settings" style="@style/Tab" android:text="@string/tab_settings" />
     </LinearLayout>

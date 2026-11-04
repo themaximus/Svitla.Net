@@ -116,7 +116,7 @@ object Widgets {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    // 48 half hours as a bar: on light, off striped dark, possible amber; a white tick at "now"
+    // 48 half hours as a bar: on green, off red, possible amber; a white tick at "now"
     fun dayBar(day: DaySchedule?, now: ZonedDateTime): Bitmap {
         val width = 480
         val height = 28
@@ -126,21 +126,21 @@ object Widgets {
         val cell = width / 48f
         for (i in 0 until 48) {
             paint.color = when (day?.halves?.get(i)) {
-                Power.OFF -> Color.parseColor("#3A3F47")
-                Power.MAYBE -> Color.parseColor("#C9A227")
-                Power.ON -> Color.parseColor("#E8F5EE")
-                null -> Color.parseColor("#55606A")
+                Power.OFF -> Color.parseColor("#7A1414")
+                Power.MAYBE -> Color.parseColor("#FF9F1A")
+                Power.ON -> Color.parseColor("#00FF88")
+                null -> Color.parseColor("#33FFFFFF")
             }
             canvas.drawRect(i * cell + 0.5f, 4f, (i + 1) * cell - 0.5f, height - 4f, paint)
             if (day?.halves?.get(i) == Power.OFF) {
-                paint.color = Color.parseColor("#5A606A")
+                paint.color = Color.parseColor("#FF3B3B")
                 canvas.drawLine(i * cell + 1, height - 5f, (i + 1) * cell - 1, 5f, paint.apply { strokeWidth = 2f })
             }
         }
         paint.color = Color.argb(90, 255, 255, 255)
         for (h in 1 until 24) if (h % 6 == 0) canvas.drawRect(h * 2 * cell - 0.75f, 0f, h * 2 * cell + 0.75f, height.toFloat(), paint)
         val minute = now.hour * 60 + now.minute
-        paint.color = Color.parseColor("#FF4444")
+        paint.color = Color.WHITE
         canvas.drawRoundRect(RectF(minute / 1440f * width - 2, 0f, minute / 1440f * width + 2, height.toFloat()), 2f, 2f, paint)
         return bitmap
     }
