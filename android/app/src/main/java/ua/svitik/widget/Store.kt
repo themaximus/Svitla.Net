@@ -27,14 +27,24 @@ class Store(context: Context) {
             return pageNotice()?.let(schedule::withEmergency) ?: schedule
         }
         set(value) {
-            prefs.edit()
+            val edit = prefs.edit()
                 .putString("schedule", value?.let { encode(it).toString() })
                 .putString("scheduleRegion", regionId)
                 .putLong("loadedAt", System.currentTimeMillis())
-                .apply()
+            if (!value?.today.isNullOrEmpty()) {
+                edit.putString("lastKnown", encodeDays(value!!.today).toString()).putString("lastKnownRegion", regionId)
+            }
+            edit.apply()
         }
 
     val loadedAt: Long get() = prefs.getLong("loadedAt", 0)
+
+    /** The group's last schedule seen for a day: shown dimmed during emergency outages, when none applies. */
+    fun lastKnown(group: String?): DaySchedule? {
+        if (prefs.getString("lastKnownRegion", null) != regionId) return null
+        val days = prefs.getString("lastKnown", null)?.let { runCatching { decodeDays(JSONObject(it)) }.getOrNull() }
+        return days?.firstOrNull { it.first == group }?.second
+    }
 
     /** What the DTEK page's pop-up says today: its text during emergency outages, else null. */
     fun setPageNotice(page: String, message: String?) {

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Світик</string>
+    <string name="app_name">Світла.Нєт</string>
     <string name="subtitle">Графік відключень світла ДТЕК</string>
 
-    <string name="widget_small">Світик: статус</string>
-    <string name="widget_strip">Світик: смуга дня</string>
-    <string name="widget_day">Світик: графік дня</string>
+    <string name="widget_small">Світла.Нєт: статус</string>
+    <string name="widget_strip">Світла.Нєт: смуга дня</string>
+    <string name="widget_day">Світла.Нєт: графік дня</string>
     <string name="widget_small_description">Чи є світло і коли це зміниться</string>
     <string name="widget_strip_description">Статус і весь день однією смугою</string>
     <string name="widget_day_description">Статус і всі 24 години, як на компʼютері</string>
@@ -38,6 +38,7 @@
     <string name="emergency">Екстрені відключення</string>
     <string name="emergency_title">⚠ Екстрені відключення</string>
     <string name="emergency_returns">Графік повернеться, щойно ДТЕК його відновить.</string>
+    <string name="last_known">Останній відомий графік (%1$s), зараз не діє</string>
     <string name="emergency_plaque">⚠ Екстрені відключення: графіки не діють</string>
     <string name="emergency_note">Графіки не діють</string>
     <string name="emergency_text">За наказом НЕК Укренерго застосовані екстрені відключення. Графіки відключень при цьому не діють.</string>
@@ -45,7 +46,7 @@
     <string name="restricted_text">Для застосунку ввімкнено режим батареї «Обмежено». Android не дає йому працювати у фоні, тому статус на віджеті може запізнюватися до 30 хвилин. Щоб він оновлювався вчасно, відкрийте налаштування, далі «Використання заряду акумулятора» і оберіть «Без обмежень».</string>
     <string name="restricted_button">Відкрити налаштування застосунку</string>
     <string name="background_ok">Обмежень немає: віджет оновлюється вчасно.</string>
-    <string name="widgets_hint">Натисніть кнопку, щоб додати віджет, або затисніть порожнє місце на робочому столі → Віджети → Світик.</string>
+    <string name="widgets_hint">Натисніть кнопку, щоб додати віджет, або затисніть порожнє місце на робочому столі → Віджети → Світла.Нєт.</string>
     <string name="add_small">Статус · 2×1</string>
     <string name="add_strip">Смуга дня · 4×1</string>
     <string name="add_day">Графік дня · 4×3</string>

@@ -226,15 +226,22 @@ class MainActivity : Activity() {
             visibility = if (day == null && !emergency) View.VISIBLE else View.GONE
             setText(if (showTomorrow) R.string.not_published_tomorrow else R.string.not_published_today)
         }
-        if (day == null) return
+        // Under the plaque, the last schedule known: dimmed, since it does not apply now
+        val shown = if (emergency) store.lastKnown(group) else day
+        findViewById<View>(R.id.columns).alpha = if (emergency) 0.35f else 1f
+        findViewById<TextView>(R.id.last_known).apply {
+            visibility = if (emergency && shown != null) View.VISIBLE else View.GONE
+            if (shown != null) text = getString(R.string.last_known, "%02d.%02d".format(shown.date.dayOfMonth, shown.date.monthValue))
+        }
+        if (shown == null) return
         for (h in 0 until 24) {
-            val isNow = !showTomorrow && h == now.hour
+            val isNow = !showTomorrow && !emergency && h == now.hour
             val column = if (h < 12) left else right
             val row = layoutInflater.inflate(if (isNow) R.layout.widget_hour_now else R.layout.widget_hour, column, false)
             // In the widget the rows share the column's height; here the column grows with them
             row.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)).apply { setMargins(0, dp(3), 0, dp(3)) }
             row.findViewById<TextView>(R.id.hour).apply { text = "%02d-%02d".format(h, h + 1); textSize = 13f }
-            val (a, b) = day.halves[h * 2] to day.halves[h * 2 + 1]
+            val (a, b) = shown.halves[h * 2] to shown.halves[h * 2 + 1]
             row.findViewById<ImageView>(R.id.indicator).setImageResource(when {
                 a == Power.OFF && b == Power.OFF -> R.drawable.ind_off
                 a == Power.OFF -> R.drawable.ind_first
