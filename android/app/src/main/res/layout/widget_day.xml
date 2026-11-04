@@ -26,6 +26,13 @@
         android:text="@string/not_published_today"
         android:visibility="gone" />
 
+    <!-- Emergency outages: the plaque takes the hours' place -->
+    <LinearLayout android:id="@+id/emergency_plaque" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="6dp" android:background="@drawable/emergency_bg" android:gravity="center" android:orientation="vertical" android:padding="14dp" android:visibility="gone">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="6dp" android:text="@string/emergency_title" android:textColor="@color/amber" android:textSize="15sp" android:textStyle="bold" />
+        <TextView android:id="@+id/emergency_message" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/text" android:textSize="13sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center" android:text="@string/emergency_returns" android:textColor="@color/text_dim" android:textSize="11sp" />
+    </LinearLayout>
+
     <LinearLayout android:id="@+id/hours" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
         <LinearLayout android:id="@+id/column_left" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginEnd="4dp" android:orientation="vertical" />
         <LinearLayout android:id="@+id/column_right" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="4dp" android:orientation="vertical" />

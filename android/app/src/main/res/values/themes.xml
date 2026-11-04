@@ -4,6 +4,7 @@
     <color name="card">#FF000000</color>
     <color name="green">#FF00FF88</color>
     <color name="red">#FFFF4444</color>
+    <color name="amber">#FFFF9F1A</color>
     <color name="text">#FFFFFFFF</color>
     <color name="text_dim">#B3FFFFFF</color>
     <color name="row">#9E080E14</color>

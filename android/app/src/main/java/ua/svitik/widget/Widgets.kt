@@ -76,9 +76,30 @@ object Widgets {
 
             when (layout) {
                 R.layout.widget_strip -> views.setImageViewBitmap(R.id.bar, dayBar(schedule?.today?.get(group), now))
-                R.layout.widget_day -> fillHours(context, views, schedule?.today?.get(group), now, power)
+                R.layout.widget_day -> fillHours(context, views, schedule, group, now, power)
             }
+            if (power.emergency) showEmergency(context, views, layout, schedule)
             manager.updateAppWidget(id, views)
+        }
+    }
+
+    // Emergency outages: no schedule applies, so a plaque saying so covers it. The status row already
+    // names them, and the small widget needs the room for that (two lines).
+    private fun showEmergency(context: Context, views: RemoteViews, layout: Int, schedule: Schedule?) {
+        when (layout) {
+            R.layout.widget_small -> views.setViewVisibility(R.id.label, View.GONE)
+            R.layout.widget_strip -> {
+                views.setViewVisibility(R.id.next, View.INVISIBLE)
+                views.setViewVisibility(R.id.schedule, View.GONE)
+                views.setViewVisibility(R.id.emergency_plaque, View.VISIBLE)
+            }
+            R.layout.widget_day -> {
+                views.setViewVisibility(R.id.next, View.GONE)
+                views.setViewVisibility(R.id.no_schedule, View.GONE)
+                views.setViewVisibility(R.id.hours, View.GONE)
+                views.setViewVisibility(R.id.emergency_plaque, View.VISIBLE)
+                views.setTextViewText(R.id.emergency_message, schedule?.emergencyMessage ?: context.getString(R.string.emergency_text))
+            }
         }
     }
 
@@ -146,10 +167,10 @@ object Widgets {
     }
 
     // Two columns of 12 rows, as on the desktop: "00-01" and the indicator of the hour
-    private fun fillHours(context: Context, views: RemoteViews, day: DaySchedule?, now: ZonedDateTime, power: PowerNow) {
+    private fun fillHours(context: Context, views: RemoteViews, schedule: Schedule?, group: String?, now: ZonedDateTime, power: PowerNow) {
+        val day = schedule?.today?.get(group)
         views.removeAllViews(R.id.column_left)
         views.removeAllViews(R.id.column_right)
-        views.setTextViewText(R.id.no_schedule, context.getString(if (power.emergency) R.string.emergency_text else R.string.not_published_today))
         views.setViewVisibility(R.id.no_schedule, if (day == null) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.hours, if (day == null) View.GONE else View.VISIBLE)
         if (day == null) return

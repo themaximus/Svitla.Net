@@ -22,7 +22,7 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <TextView android:id="@+id/status" style="@style/WidgetStatus" android:textSize="15sp" android:text="@string/power_on" />
+        <TextView android:id="@+id/status" style="@style/WidgetStatus" android:maxLines="2" android:singleLine="false" android:textSize="15sp" android:text="@string/power_on" />
         <TextView android:id="@+id/next" style="@style/WidgetNext" android:maxLines="2" />
         <TextView android:id="@+id/label" style="@style/WidgetLabel" />
     </LinearLayout>

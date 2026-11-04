@@ -23,7 +23,8 @@ class Store(context: Context) {
     var schedule: Schedule?
         get() {
             if (prefs.getString("scheduleRegion", null) != regionId) return null
-            return prefs.getString("schedule", null)?.let { runCatching { decode(JSONObject(it)) }.getOrNull() }
+            val schedule = prefs.getString("schedule", null)?.let { runCatching { decode(JSONObject(it)) }.getOrNull() } ?: return null
+            return pageNotice()?.let(schedule::withEmergency) ?: schedule
         }
         set(value) {
             prefs.edit()
@@ -34,6 +35,27 @@ class Store(context: Context) {
         }
 
     val loadedAt: Long get() = prefs.getLong("loadedAt", 0)
+
+    /** What the DTEK page's pop-up says today: its text during emergency outages, else null. */
+    fun setPageNotice(page: String, message: String?) {
+        prefs.edit()
+            .putString("noticePage", page)
+            .putString("noticeDate", LocalDate.now(KYIV).toString())
+            .putString("noticeMessage", message)
+            .apply()
+    }
+
+    // Holds until the page is read again: it often cannot be, and a note says nothing about another day
+    private fun pageNotice(): String? {
+        if (prefs.getString("noticePage", null) != region.page) return null
+        if (prefs.getString("noticeDate", null) != LocalDate.now(KYIV).toString()) return null
+        return prefs.getString("noticeMessage", null)
+    }
+
+    /** The day whose emergency outages the phone was last notified of. */
+    var notifiedEmergency: String?
+        get() = prefs.getString("notifiedEmergency", null)
+        set(value) = prefs.edit().putString("notifiedEmergency", value).apply()
 
     /** True at most once per interval: three widgets update together but need one download. */
     fun claimDownload(intervalMs: Long): Boolean {
@@ -52,6 +74,7 @@ class Store(context: Context) {
         put("savedOn", LocalDate.now(KYIV).toString())
         put("emergencyToday", schedule.emergencyToday)
         put("emergencyTomorrow", schedule.emergencyTomorrow)
+        schedule.emergencyMessage?.let { put("emergencyMessage", it) }
         put("today", encodeDays(schedule.today))
         put("tomorrow", encodeDays(schedule.tomorrow))
     }
@@ -75,6 +98,7 @@ class Store(context: Context) {
             json.optString("updated").takeIf { it.isNotEmpty() && it != "null" },
             emergencyToday,
             savedOn == now && json.optBoolean("emergencyTomorrow"),
+            json.optString("emergencyMessage").takeIf { it.isNotEmpty() },
         )
     }
 

@@ -30,11 +30,16 @@ class Schedule(
     val updated: String?,                     // DTEK's own update time, e.g. "23.10.2026 03:00"
     val emergencyToday: Boolean = false,      // emergency outages: no schedule applies
     val emergencyTomorrow: Boolean = false,
+    val emergencyMessage: String? = null,     // DTEK's own words, when they come from its page
 ) {
     val groups: List<String> = (today.keys + tomorrow.keys).toSortedSet(compareBy<String>({ it.substringBefore('.').toInt() }, { it })).toList()
+
+    /** Emergency outages today, as DTEK's page says: its schedule for today does not apply. */
+    fun withEmergency(message: String) = Schedule(emptyMap(), tomorrow, updated, true, emergencyTomorrow, message)
 }
 
-class Region(val id: String, val name: String, val short: String, val sources: List<Source>)
+/** page: the DTEK page whose pop-up announces emergency outages. */
+class Region(val id: String, val name: String, val short: String, val page: String, val sources: List<Source>)
 
 fun interface Source {
     fun load(): Schedule
@@ -51,15 +56,17 @@ private val cekOnly: (String) -> String? = { CEK_GROUP.find(it)?.groupValues?.ge
 
 /** Donetsk is published only on the DTEK page itself, which keeps apps out with its bot protection. */
 val REGIONS = listOf(
-    Region("dnem", "Дніпро та область (ДТЕК)", "Дніпро",
+    Region("dnem", "Дніпро та область (ДТЕК)", "Дніпро", dtekPage("dnem"),
         listOf(yasno(3, 301), dtekCopy("dnipro.json", dniproOnly))),
-    Region("cek", "Дніпро та область (ЦЕК)", "ЦЕК",
+    Region("cek", "Дніпро та область (ЦЕК)", "ЦЕК", dtekPage("dnem"),
         listOf(yasno(3, 303), dtekCopy("dnipro.json", cekOnly))),
-    Region("kem", "Київ (місто, ДТЕК)", "Київ",
+    Region("kem", "Київ (місто, ДТЕК)", "Київ", dtekPage("kem"),
         listOf(yasno(25, 902), dtekCopy("kyiv.json"))),
-    Region("krem", "Київська обл. (ДТЕК)", "Київ обл.", listOf(dtekCopy("kyiv-region.json"))),
-    Region("oem", "Одеська обл. (ДТЕК)", "Одеса", listOf(dtekCopy("odesa.json"))),
+    Region("krem", "Київська обл. (ДТЕК)", "Київ обл.", dtekPage("krem"), listOf(dtekCopy("kyiv-region.json"))),
+    Region("oem", "Одеська обл. (ДТЕК)", "Одеса", dtekPage("oem"), listOf(dtekCopy("odesa.json"))),
 )
+
+private fun dtekPage(id: String) = "https://www.dtek-$id.com.ua/ua/shutdowns"
 
 /** Groups to choose from: those in the schedule, or the usual ones while nothing is published. */
 fun selectableGroups(schedule: Schedule?, current: String?): List<String> {
@@ -169,6 +176,27 @@ private fun dtekCopy(file: String, groups: (String) -> String? = { it }) = Sourc
     Schedule(today, tomorrow, fact.optString("update").takeIf { it.isNotEmpty() })
 }
 
+// ── The DTEK pages' pop-up (m-attention): "За наказом НЕК Укренерго введені екстрені відключення ... Графіки ... не діють".
+// During emergency outages the page keeps the last schedule and says there that it does not apply.
+
+/** The pop-up's text if it announces emergency outages. */
+fun emergencyNotice(popup: String): String? {
+    val text = popup.replace(Regex("""\s+"""), " ").trim()
+    val lower = text.lowercase()
+    return text.takeIf { "екстрен" in lower && Regex("""не\s+ді""").containsMatchIn(lower) }
+}
+
+/**
+ * Reads the region's page without a browser and notes what its pop-up says. Usually the bot protection answers
+ * instead: then nothing is known and the last note stays (the app also reads the page, in a hidden WebView).
+ */
+fun checkDtekPage(region: Region, store: Store) {
+    val html = runCatching { httpGet(region.page, "text/html") }.getOrNull() ?: return
+    if ("DisconSchedule.fact" !in html) return
+    val popup = Regex("""class="m-attention__text"[^>]*>([\s\S]*?)</div>""").find(html)?.groupValues?.get(1).orEmpty()
+    store.setPageNotice(region.page, emergencyNotice(popup.replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ")))
+}
+
 private fun place(day: DaySchedule, group: String, today: MutableMap<String, DaySchedule>, tomorrow: MutableMap<String, DaySchedule>) {
     val now = LocalDate.now(KYIV)
     when (day.date) {
@@ -178,11 +206,11 @@ private fun place(day: DaySchedule, group: String, today: MutableMap<String, Day
     }
 }
 
-private fun httpGet(url: String): String {
+private fun httpGet(url: String, accept: String = "application/json"): String {
     val connection = URL(url).openConnection() as HttpURLConnection
     connection.connectTimeout = 10_000
     connection.readTimeout = 10_000
-    connection.setRequestProperty("Accept", "application/json")
+    connection.setRequestProperty("Accept", accept)
     connection.setRequestProperty("User-Agent", "SvitikWidget/1.0 (Android)")
     try {
         if (connection.responseCode !in 200..299) throw IllegalStateException("HTTP ${connection.responseCode}")

@@ -1,13 +1,21 @@
 package ua.svitik.widget
 
+import android.Manifest
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.View
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -16,6 +24,8 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 
@@ -26,6 +36,10 @@ class MainActivity : Activity() {
     private var showTomorrow = false
     private var groups: List<String> = emptyList()
     private var page = R.id.page_schedule
+    private val handler = Handler(Looper.getMainLooper())
+    private var pageReader: WebView? = null
+    private var checkedPage: String? = null
+    private var checkedAt = 0L
 
     // Page -> its title
     private val pages = mapOf(
@@ -76,6 +90,16 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.open_battery).setOnClickListener { openAppSettings() }
 
         Refresher.schedule(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && savedInstanceState == null &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+    }
+
+    // Emergency outages may already be under way when the notifications get allowed
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        Refresher.redraw(this)
     }
 
     override fun onResume() {
@@ -95,6 +119,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        closePageReader()
         background.shutdown()
         super.onDestroy()
     }
@@ -109,7 +135,49 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.open_settings).isSelected = selected == R.id.page_settings
     }
 
+    /**
+     * The DTEK page's pop-up announces emergency outages, but its bot protection keeps plain requests out.
+     * As on the desktop, the page is read in a browser nobody sees: a WebView attached to no window.
+     */
+    private fun checkPageNotice() {
+        val page = store.region.page
+        val now = System.currentTimeMillis()
+        if (pageReader != null || (page == checkedPage && now - checkedAt < PAGE_CHECK_MS)) return
+        val reader = WebView(this)
+        pageReader = reader
+        val finish = Runnable { closePageReader() }
+        reader.settings.javaScriptEnabled = true
+        reader.settings.domStorageEnabled = true
+        reader.settings.blockNetworkImage = true
+        reader.webViewClient = object : WebViewClient() {
+            // The bot protection's page finishes too, then reloads the real one
+            override fun onPageFinished(view: WebView, url: String) {
+                view.evaluateJavascript(READ_POPUP) { answer ->
+                    if (pageReader !== reader) return@evaluateJavascript
+                    val popup = runCatching { JSONObject(JSONTokener(answer).nextValue() as String) }.getOrNull() ?: return@evaluateJavascript
+                    if (!popup.optBoolean("ready")) return@evaluateJavascript
+                    handler.removeCallbacks(finish)
+                    checkedPage = page
+                    checkedAt = System.currentTimeMillis()
+                    store.setPageNotice(page, emergencyNotice(popup.optString("text")))
+                    Log.i("Svitik", "DTEK page read, emergency: ${store.schedule?.emergencyToday}")
+                    Refresher.redraw(this@MainActivity)
+                    render()
+                    handler.post(finish)
+                }
+            }
+        }
+        handler.postDelayed(finish, PAGE_TIMEOUT_MS)
+        reader.loadUrl(page)
+    }
+
+    private fun closePageReader() {
+        pageReader?.destroy()
+        pageReader = null
+    }
+
     private fun refresh() {
+        checkPageNotice()
         findViewById<View>(R.id.progress).visibility = View.VISIBLE
         background.execute {
             Refresher.download(this)
@@ -151,9 +219,12 @@ class MainActivity : Activity() {
         val right = findViewById<LinearLayout>(R.id.column_right)
         left.removeAllViews()
         right.removeAllViews()
+        // The day of emergency outages: DTEK's own words instead of the hours
+        findViewById<View>(R.id.emergency_card).visibility = if (emergency) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.emergency_message).text = schedule?.emergencyMessage ?: getString(R.string.emergency_text)
         findViewById<TextView>(R.id.no_schedule).apply {
-            visibility = if (day == null) View.VISIBLE else View.GONE
-            setText(if (emergency) R.string.emergency_text else if (showTomorrow) R.string.not_published_tomorrow else R.string.not_published_today)
+            visibility = if (day == null && !emergency) View.VISIBLE else View.GONE
+            setText(if (showTomorrow) R.string.not_published_tomorrow else R.string.not_published_today)
         }
         if (day == null) return
         for (h in 0 until 24) {
@@ -210,5 +281,8 @@ class MainActivity : Activity() {
 
     private companion object {
         const val STATE_PAGE = "page"
+        const val PAGE_CHECK_MS = 10 * 60_000L
+        const val PAGE_TIMEOUT_MS = 30_000L
+        const val READ_POPUP = "JSON.stringify({ready: document.documentElement.outerHTML.includes('DisconSchedule.fact'), text: (document.querySelector('.m-attention__text') || {}).textContent || ''})"
     }
 }
