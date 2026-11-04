@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The rims of two large rings, stretched over the card -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="100dp" android:height="100dp" android:viewportWidth="100" android:viewportHeight="100">
-    <path android:strokeColor="#99FF9F1A" android:strokeWidth="0.7" android:pathData="M18,0 C36,18 64,18 82,0" />
-    <path android:strokeColor="#73FF9F1A" android:strokeWidth="0.7" android:pathData="M18,100 C36,82 64,82 82,100" />
-</vector>

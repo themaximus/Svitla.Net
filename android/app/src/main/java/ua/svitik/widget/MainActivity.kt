@@ -19,20 +19,19 @@ import android.widget.Toast
 import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 
-/** The app, one page per tab: the day's schedule (the main one), the status now, the widgets and the settings. */
+/** The app is the day's schedule; the bell opens the technical notifications, the gear the settings and widgets. */
 class MainActivity : Activity() {
     private lateinit var store: Store
     private val background = Executors.newSingleThreadExecutor()
     private var showTomorrow = false
     private var groups: List<String> = emptyList()
-    private var backdropAccent: Int? = null
+    private var page = R.id.page_schedule
 
-    // Tab button -> its page
-    private val tabs = listOf(
-        R.id.tab_schedule to R.id.page_schedule,
-        R.id.tab_now to R.id.page_now,
-        R.id.tab_widgets to R.id.page_widgets,
-        R.id.tab_settings to R.id.page_settings,
+    // Page -> its title
+    private val pages = mapOf(
+        R.id.page_schedule to R.string.schedule_title,
+        R.id.page_alerts to R.string.alerts_title,
+        R.id.page_settings to R.string.settings_title,
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,8 +39,10 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         store = Store(this)
 
-        for ((tab, _) in tabs) findViewById<View>(tab).setOnClickListener { selectTab(tab) }
-        selectTab(savedInstanceState?.getInt(STATE_TAB) ?: R.id.tab_schedule)
+        // A second tap on the icon returns to the schedule, as does the back button
+        findViewById<View>(R.id.open_alerts).setOnClickListener { togglePage(R.id.page_alerts) }
+        findViewById<View>(R.id.open_settings).setOnClickListener { togglePage(R.id.page_settings) }
+        showPage(savedInstanceState?.getInt(STATE_PAGE)?.takeIf { it in pages } ?: R.id.page_schedule)
 
         val regions = findViewById<Spinner>(R.id.region)
         regions.adapter = ArrayAdapter(this, R.layout.spinner_item, REGIONS.map { it.name }).apply {
@@ -73,7 +74,6 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.add_strip).setOnClickListener { pinWidget(StripWidget::class.java) }
         findViewById<Button>(R.id.add_day).setOnClickListener { pinWidget(DayWidget::class.java) }
         findViewById<Button>(R.id.open_battery).setOnClickListener { openAppSettings() }
-        findViewById<Button>(R.id.open_battery_settings).setOnClickListener { openAppSettings() }
 
         Refresher.schedule(this)
     }
@@ -86,7 +86,12 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        tabs.firstOrNull { findViewById<View>(it.first).isSelected }?.let { outState.putInt(STATE_TAB, it.first) }
+        outState.putInt(STATE_PAGE, page)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (page == R.id.page_schedule) super.onBackPressed() else showPage(R.id.page_schedule)
     }
 
     override fun onDestroy() {
@@ -94,21 +99,23 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun selectTab(selected: Int) {
-        for ((tab, page) in tabs) {
-            findViewById<View>(tab).isSelected = tab == selected
-            findViewById<View>(page).visibility = if (tab == selected) View.VISIBLE else View.GONE
-        }
+    private fun togglePage(target: Int) = showPage(if (page == target) R.id.page_schedule else target)
+
+    private fun showPage(selected: Int) {
+        page = selected
+        for (id in pages.keys) findViewById<View>(id).visibility = if (id == selected) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.title).setText(pages.getValue(selected))
+        findViewById<View>(R.id.open_alerts).isSelected = selected == R.id.page_alerts
+        findViewById<View>(R.id.open_settings).isSelected = selected == R.id.page_settings
     }
 
     private fun refresh() {
         findViewById<View>(R.id.progress).visibility = View.VISIBLE
         background.execute {
-            val ok = Refresher.download(this)
+            Refresher.download(this)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 findViewById<View>(R.id.progress).visibility = View.GONE
-                if (!ok) Toast.makeText(this, R.string.load_failed, Toast.LENGTH_SHORT).show()
                 render()
             }
         }
@@ -119,36 +126,20 @@ class MainActivity : Activity() {
         val group = store.group
         val now = ZonedDateTime.now(KYIV)
         val power = powerNow(schedule, group, now)
-        renderBackdrop(Glow.accent(power))
-        renderNow(schedule, group, power, now)
+        renderAlerts(schedule)
         renderSchedule(schedule, group, power, now)
         renderSettings(schedule, group)
     }
 
-    // The rings take the colour of the power state; redrawn only when it changes
-    private fun renderBackdrop(accent: Int) {
-        if (accent == backdropAccent) return
-        backdropAccent = accent
-        findViewById<View>(R.id.root).background = Glow.background(this, accent)
-    }
-
-    private fun renderNow(schedule: Schedule?, group: String?, power: PowerNow, now: ZonedDateTime) {
-        findViewById<ImageView>(R.id.bolt).setImageResource(Widgets.boltIcon(power))
-        findViewById<View>(R.id.card).setBackgroundResource(when {
-            power.emergency -> R.drawable.glass_card_warn
-            power.off -> R.drawable.glass_card_off
-            else -> R.drawable.glass_card_on
-        })
-        findViewById<TextView>(R.id.status).setText(Widgets.statusText(power))
-        findViewById<TextView>(R.id.next).text = Widgets.nextText(this, schedule, group, power, now)
-        findViewById<TextView>(R.id.label).text = if (group == null) getString(R.string.choose_group) else "${store.region.short} · ${getString(R.string.group_n, group)}"
-        findViewById<ImageView>(R.id.day_bar).setImageBitmap(Widgets.dayBar(schedule?.today?.get(group), now))
+    // The technical notices live behind the bell; a dot on it says one of them needs attention
+    private fun renderAlerts(schedule: Schedule?) {
+        val failed = store.lastError != null
+        val restricted = Refresher.isBackgroundRestricted(this)
         findViewById<TextView>(R.id.updated).text = schedule?.updated?.let { getString(R.string.updated_at, it) } ?: ""
-        findViewById<TextView>(R.id.error).apply {
-            text = store.lastError?.let { getString(R.string.load_failed) } ?: ""
-            visibility = if (store.lastError == null) View.GONE else View.VISIBLE
-        }
-        findViewById<View>(R.id.restricted_card).visibility = if (Refresher.isBackgroundRestricted(this)) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.error).visibility = if (failed) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.background_state).visibility = if (restricted) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.restricted_card).visibility = if (restricted) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.alerts_dot).visibility = if (failed || restricted) View.VISIBLE else View.GONE
     }
 
     private fun renderSchedule(schedule: Schedule?, group: String?, power: PowerNow, now: ZonedDateTime) {
@@ -193,9 +184,6 @@ class MainActivity : Activity() {
             }
         }
         groups.indexOf(group).takeIf { it >= 0 }?.let { findViewById<Spinner>(R.id.group).setSelection(it) }
-        findViewById<TextView>(R.id.background_state).setText(
-            if (Refresher.isBackgroundRestricted(this)) R.string.background_restricted else R.string.background_ok
-        )
     }
 
     /** Android has no direct link to the app's battery page; it is one step from the app's settings. */
@@ -221,6 +209,6 @@ class MainActivity : Activity() {
     }
 
     private companion object {
-        const val STATE_TAB = "tab"
+        const val STATE_PAGE = "page"
     }
 }
