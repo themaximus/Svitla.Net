@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget card while there is no power: a red border -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#E60D1F18" />
+    <stroke android:width="2dp" android:color="#80FF4444" />
+    <corners android:radius="22dp" />
+</shape>

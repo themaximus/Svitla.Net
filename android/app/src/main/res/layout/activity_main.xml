@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚡ Світик"
+            android:textColor="@color/green"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            android:text="@string/subtitle"
+            android:textColor="@color/text_dim"
+            android:textSize="13sp" />
+
+        <!-- Status card -->
+        <LinearLayout
+            android:id="@+id/card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_bg_on"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                <ImageView android:id="@+id/bolt" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginEnd="10dp" android:src="@drawable/ic_bolt_on" />
+                <TextView android:id="@+id/status" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/power_on" android:textColor="@color/text" android:textSize="22sp" android:textStyle="bold" />
+                <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView android:id="@+id/next" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textColor="#D9FFFFFF" android:textSize="15sp" />
+            <TextView android:id="@+id/updated" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="@color/text_dim" android:textSize="11sp" />
+            <TextView android:id="@+id/error" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="#FF8080" android:textSize="12sp" android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="@string/region" />
+        <Spinner android:id="@+id/region" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/button_bg" android:paddingHorizontal="10dp" />
+
+        <TextView style="@style/SectionTitle" android:text="@string/group" />
+        <Spinner android:id="@+id/group" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/button_bg" android:paddingHorizontal="10dp" />
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:orientation="horizontal">
+            <Button android:id="@+id/today" style="@style/AppButton" android:layout_width="0dp" android:layout_weight="1" android:layout_marginTop="0dp" android:layout_marginEnd="4dp" android:text="@string/today" />
+            <Button android:id="@+id/tomorrow" style="@style/AppButton" android:layout_width="0dp" android:layout_weight="1" android:layout_marginTop="0dp" android:layout_marginStart="4dp" android:text="@string/tomorrow" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/no_schedule" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:padding="24dp" android:text="@string/not_published_today" android:textColor="@color/text_dim" android:textSize="14sp" android:visibility="gone" />
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="horizontal">
+            <LinearLayout android:id="@+id/column_left" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginEnd="4dp" android:orientation="vertical" />
+            <LinearLayout android:id="@+id/column_right" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="4dp" android:orientation="vertical" />
+        </LinearLayout>
+
+        <Button android:id="@+id/refresh" style="@style/AppButton" android:layout_marginTop="14dp" android:text="@string/refresh" />
+
+        <TextView style="@style/SectionTitle" android:text="@string/widgets" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/widgets_hint" android:textColor="@color/text_dim" android:textSize="12sp" />
+        <Button android:id="@+id/add_small" style="@style/AppButton" android:text="@string/add_small" />
+        <Button android:id="@+id/add_strip" style="@style/AppButton" android:text="@string/add_strip" />
+        <Button android:id="@+id/add_day" style="@style/AppButton" android:text="@string/add_day" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="@string/sources" android:textColor="#66FFFFFF" android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Day 4×3: the status and today's 24 hours in two columns, like the desktop widget -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_on"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+        <ImageView android:id="@+id/bolt" android:layout_width="22dp" android:layout_height="22dp" android:layout_marginEnd="6dp" android:src="@drawable/ic_bolt_on" />
+        <TextView android:id="@+id/status" style="@style/WidgetStatus" android:layout_width="0dp" android:layout_weight="1" android:textSize="17sp" android:text="@string/power_on" />
+        <TextView android:id="@+id/label" style="@style/WidgetLabel" android:textSize="11sp" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/next" style="@style/WidgetNext" android:layout_marginBottom="6dp" android:singleLine="true" />
+
+    <TextView
+        android:id="@+id/no_schedule"
+        style="@style/WidgetNext"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/not_published_today"
+        android:visibility="gone" />
+
+    <LinearLayout android:id="@+id/hours" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+        <LinearLayout android:id="@+id/column_left" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginEnd="4dp" android:orientation="vertical" />
+        <LinearLayout android:id="@+id/column_right" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="4dp" android:orientation="vertical" />
+    </LinearLayout>
+</LinearLayout>

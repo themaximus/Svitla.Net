@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Світик</string>
+    <string name="subtitle">Графік відключень світла ДТЕК</string>
+
+    <string name="widget_small">Світик: статус</string>
+    <string name="widget_strip">Світик: смуга дня</string>
+    <string name="widget_day">Світик: графік дня</string>
+    <string name="widget_small_description">Чи є світло і коли це зміниться</string>
+    <string name="widget_strip_description">Статус і весь день однією смугою</string>
+    <string name="widget_day_description">Статус і всі 24 години, як на компʼютері</string>
+
+    <string name="power_on">Світло є</string>
+    <string name="power_off">Світла немає</string>
+    <string name="goes_off">Вимкнуть</string>
+    <string name="back_on">Увімкнуть</string>
+    <string name="at">о</string>
+    <string name="tomorrow_at">завтра о</string>
+    <string name="no_outages">Відключень не заплановано</string>
+    <string name="back_unknown">Час увімкнення невідомий</string>
+    <string name="no_data">Немає даних — відкрийте застосунок</string>
+    <string name="not_published_today">Графік на сьогодні ще не опубліковано</string>
+    <string name="not_published_tomorrow">Графік на завтра ще не опубліковано</string>
+    <string name="choose_group">Оберіть чергу</string>
+    <string name="updated_at">Оновлено ДТЕК: %1$s</string>
+    <string name="load_failed">Не вдалося оновити графік. Перевірте інтернет.</string>
+
+    <string name="region">Регіон / місто</string>
+    <string name="group">Черга відключень</string>
+    <string name="group_n">Черга %1$s</string>
+    <string name="refresh">Оновити</string>
+    <string name="today">Сьогодні</string>
+    <string name="tomorrow">Завтра</string>
+    <string name="widgets">Віджети на робочий стіл</string>
+    <string name="widgets_hint">Натисніть, щоб додати, або затисніть порожнє місце на робочому столі → Віджети → Світик.</string>
+    <string name="add_small">Статус · 2×1</string>
+    <string name="add_strip">Смуга дня · 4×1</string>
+    <string name="add_day">Графік дня · 4×3</string>
+    <string name="pin_unsupported">Ваш лаунчер не вміє додавати віджети із застосунку. Додайте через меню робочого столу.</string>
+    <string name="sources">Дані: YASNO та сайти ДТЕК (копія outage-data-ua). Оновлення кожні 30 хв.</string>
+</resources>

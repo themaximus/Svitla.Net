@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Power off: the bolt in grey, crossed out from corner to corner (the gap is the card colour) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#969CA6" android:pathData="M14,1 L4,13.5 L10.5,13.5 L9,23 L20,9.5 L13.5,9.5 Z" />
+    <path android:strokeColor="#0D1F18" android:strokeWidth="4.5" android:strokeLineCap="round" android:pathData="M3,3 L21,21" />
+    <path android:strokeColor="#969CA6" android:strokeWidth="2" android:strokeLineCap="round" android:pathData="M3,3 L21,21" />
+</vector>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An hour of the schedule: white = power, striped = no power (per half hour), amber = possible outage -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="34dp" android:height="16dp" android:viewportWidth="34" android:viewportHeight="16">
+  <clip-path android:pathData="M6,0 L28,0 A6,6 0 0 1 34,6 L34,10 A6,6 0 0 1 28,16 L6,16 A6,6 0 0 1 0,10 L0,6 A6,6 0 0 1 6,0 Z"/>
+  <path android:fillColor="#FFFFFF" android:pathData="M0,0 L34,0 L34,16 L0,16 Z"/>
+  <group>
+    <clip-path android:pathData="M17,0 L34,0 L34,16 L17,16 Z"/>
+    <path android:fillColor="#2A2F36" android:pathData="M17,0 L34,0 L34,16 L17,16 Z"/>
+    <path android:fillColor="#4E555F" android:pathData="M-16,16 L0,0 L1.6,0 L-14.4,16 Z M-12,16 L4,0 L5.6,0 L-10.4,16 Z M-8,16 L8,0 L9.6,0 L-6.4,16 Z M-4,16 L12,0 L13.6,0 L-2.4,16 Z M0,16 L16,0 L17.6,0 L1.6,16 Z M4,16 L20,0 L21.6,0 L5.6,16 Z M8,16 L24,0 L25.6,0 L9.6,16 Z M12,16 L28,0 L29.6,0 L13.6,16 Z M16,16 L32,0 L33.6,0 L17.6,16 Z M20,16 L36,0 L37.6,0 L21.6,16 Z M24,16 L40,0 L41.6,0 L25.6,16 Z M28,16 L44,0 L45.6,0 L29.6,16 Z M32,16 L48,0 L49.6,0 L33.6,16 Z"/>
+  </group>
+</vector>

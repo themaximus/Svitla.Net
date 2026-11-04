@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget card: the desktop widget's dark green, a green border while there is power -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#E60D1F18" />
+    <stroke android:width="2dp" android:color="#8000FF88" />
+    <corners android:radius="22dp" />
+</shape>
