@@ -34,6 +34,10 @@ class Schedule(
 ) {
     val groups: List<String> = (today.keys + tomorrow.keys).toSortedSet(compareBy<String>({ it.substringBefore('.').toInt() }, { it })).toList()
 
+    val hasTomorrow: Boolean get() = tomorrow.isNotEmpty() || emergencyTomorrow
+
+    fun withTomorrowOf(other: Schedule) = Schedule(today, other.tomorrow, updated, emergencyToday, other.emergencyTomorrow, emergencyMessage)
+
     /** Emergency outages today, as DTEK's page says: its schedule for today does not apply. */
     fun withEmergency(message: String) = Schedule(emptyMap(), tomorrow, updated, true, emergencyTomorrow, message)
 }
@@ -76,20 +80,31 @@ fun selectableGroups(schedule: Schedule?, current: String?): List<String> {
 
 fun regionById(id: String?): Region = REGIONS.firstOrNull { it.id == id } ?: REGIONS.first()
 
-/** The first source with today's schedule; failing that, the first one that answered at all. */
+/**
+ * The first source with today's schedule; failing that, the first one that answered at all.
+ * Sources publish tomorrow at different times, so a later source may complete it.
+ */
 fun loadSchedule(region: Region): Schedule {
+    var withToday: Schedule? = null
     var answered: Schedule? = null
     var error: Exception? = null
     for (source in region.sources) {
         try {
             val schedule = source.load()
-            if (schedule.today.isNotEmpty() || schedule.emergencyToday) return schedule
-            if (answered == null) answered = schedule
+            val found = withToday
+            if (found != null) {
+                if (schedule.hasTomorrow) return found.withTomorrowOf(schedule)
+            } else if (schedule.today.isNotEmpty() || schedule.emergencyToday) {
+                if (schedule.hasTomorrow) return schedule
+                withToday = schedule
+            } else if (answered == null) {
+                answered = schedule
+            }
         } catch (e: Exception) {
             if (error == null) error = e
         }
     }
-    return answered ?: throw error ?: IllegalStateException("No source")
+    return withToday ?: answered ?: throw error ?: IllegalStateException("No source")
 }
 
 // ── YASNO: { "1.1": { today: { slots: [{ start, end, type }], date, status }, tomorrow: {...}, updatedOn } }

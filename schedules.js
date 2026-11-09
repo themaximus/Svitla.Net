@@ -73,12 +73,21 @@ async function loadSchedule(regionId, fetchText) {
   if (!entry) return { status: 'error', message: 'Invalid region' };
   let failure = { status: 'error', message: 'No source answered' };
   let withoutToday = null; // a source that answered but has nothing for today; a later one may have it
+  let withToday = null; // the source that gives today; sources publish tomorrow at different times
   for (const source of entry.sources) {
     try {
       const fact = keepTodayAndTomorrow(await source.load(fetchText), source.groups);
+      if (withToday) {
+        if (!takeTomorrow(withToday.fact, fact)) continue;
+        return withToday;
+      }
       const result = { status: 'success', fact, source: source.name };
-      if (fact.data[fact.today] || fact.emergency.today) return result;
-      withoutToday = withoutToday || result;
+      if (fact.data[fact.today] || fact.emergency.today) {
+        if (hasTomorrow(fact)) return result;
+        withToday = result;
+      } else {
+        withoutToday = withoutToday || result;
+      }
     } catch (err) {
       console.error(`[schedule] ${regionId} ${source.name}: ${err.message}`);
       // DTEK's bot protection explains more to the user than a later source's failure
@@ -87,7 +96,25 @@ async function loadSchedule(regionId, fetchText) {
       }
     }
   }
-  return withoutToday || failure;
+  return withToday || withoutToday || failure;
+}
+
+function tomorrowKey() {
+  return kyivMidnight(tomorrowDate());
+}
+
+// A source can list a day with none of the region's groups (the shared Dnipro files)
+function hasTomorrow(fact) {
+  return fact.emergency.tomorrow || Object.keys(fact.data[tomorrowKey()] || {}).length > 0;
+}
+
+/** Copies tomorrow from another source into the fact; false when that source has none either. */
+function takeTomorrow(fact, other) {
+  if (!hasTomorrow(other)) return false;
+  fact.emergency.tomorrow = other.emergency.tomorrow;
+  if (other.emergency.tomorrow) fact.emergency.message = fact.emergency.message || other.emergency.message;
+  else fact.data[tomorrowKey()] = other.data[tomorrowKey()];
+  return true;
 }
 
 // ── Sources: each has load(fetchText) -> fact (any days, any group names) and an optional groups mapper ──
@@ -209,7 +236,7 @@ function isBotProtection(html) {
 // outages has no schedule: whatever a source still lists for it does not apply.
 function keepTodayAndTomorrow(fact, groups) {
   const today = kyivDate(Date.now());
-  const tomorrow = kyivDate(Date.now() + 26 * 3_600_000 - msSinceKyivMidnight());
+  const tomorrow = tomorrowDate();
   const emergencyDates = fact.emergency ? fact.emergency.dates : [];
   const data = {};
   for (const [key, dayGroups] of Object.entries(fact.data || {})) {
@@ -239,6 +266,11 @@ const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: KYIV, hour: '2-d
 
 /** 'YYYY-MM-DD' of the moment in Kyiv. */
 function kyivDate(ms) { return dateFormat.format(ms); }
+
+/** 'YYYY-MM-DD' of the next day in Kyiv (26 h after midnight: days last 23 to 25 hours). */
+function tomorrowDate() {
+  return kyivDate(Date.now() + 26 * 3_600_000 - msSinceKyivMidnight());
+}
 
 function msSinceKyivMidnight() {
   const [h, m] = timeFormat.format(Date.now()).split(':').map(Number);
